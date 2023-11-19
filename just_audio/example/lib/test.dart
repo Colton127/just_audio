@@ -9,6 +9,17 @@ class Test extends StatefulWidget {
 }
 
 class _TestState extends State<Test> {
+  final audioSource = LockCachingAudioSource(Uri.parse("https://cdn.coltongrubbs.com/audio/largeaudiofile.wav"));
+  final audioPlayer = AudioPlayer();
+  @override
+  void initState() {
+    audioSource.downloadProgressStream.listen((event) {
+      print('downloadProgress: $event');
+    });
+
+    super.initState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -17,14 +28,21 @@ class _TestState extends State<Test> {
       children: [
         OutlinedButton(
             onPressed: () async {
+              await audioSource.clearCache();
+              print('cache cleared');
+            },
+            child: const Text('Clear it')),
+        OutlinedButton(
+            onPressed: () async {
               final player = AudioPlayer();
               try {
-                final audioSource = LockCachingAudioSource(
-                    Uri.parse("https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3"));
-                await audioSource.clearCache();
-                await player.setAudioSource(audioSource);
-                await player.dispose();
-                print('successfully loaded');
+                await audioSource.request();
+
+                // await for (List<int> bytes in response.stream) {
+                //   final length = bytes.length;
+                //   print('Received: $length bytes');
+                // }
+                print('Finished prefetching');
               } catch (e) {
                 print('caught error $e');
                 return;

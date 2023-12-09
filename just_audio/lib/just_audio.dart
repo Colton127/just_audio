@@ -715,20 +715,24 @@ class AudioPlayer {
     int? initialIndex,
     Duration? initialPosition,
   }) async {
-    if (_disposed) return null;
-    _audioSource = null;
-    _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
-    _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
-    _audioSource = source;
-    _broadcastSequence();
-    Duration? duration;
-    if (playing) preload = true;
-    if (preload) {
-      duration = await load();
-    } else {
-      await _setPlatformActive(false)?.catchError((dynamic e) async => null);
+    try {
+      if (_disposed) return null;
+      _audioSource = null;
+      _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
+      _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
+      _audioSource = source;
+      _broadcastSequence();
+      Duration? duration;
+      if (playing) preload = true;
+      if (preload) {
+        duration = await load();
+      } else {
+        await _setPlatformActive(false)?.catchError((dynamic e) async => null);
+      }
+      return duration;
+    } catch (e) {
+      rethrow;
     }
-    return duration;
   }
 
   /// Starts loading the current audio source and returns the audio duration as
@@ -2714,7 +2718,6 @@ class LockCachingAudioSource extends StreamAudioSource {
   /// separate HTTP request is made to fulfill it while the download of the
   /// entire file continues in parallel.
   Future<HttpClientResponse> _fetch(HttpClientResponse response) async {
-    _downloading = true;
     final cacheFile = await this.cacheFile;
     final partialCacheFile = await _partialCacheFile;
 
@@ -2915,7 +2918,6 @@ class LockCachingAudioSource extends StreamAudioSource {
         if (response.statusCode != 200) {
           throw Exception('HTTP Status Error: ${response.statusCode}');
         }
-
         _response = _fetch(response).catchError((dynamic error, StackTrace? stackTrace) async {
           // So that we can restart later
           _downloading = false;

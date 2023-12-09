@@ -58,6 +58,9 @@ class AudioPlayer {
   /// The user agent to set on all HTTP requests.
   final String? _userAgent;
 
+  /// Whether to use the proxy server to send request headers.
+  final bool _useProxyForRequestHeaders;
+
   final AudioLoadConfiguration? _audioLoadConfiguration;
 
   final bool _androidOffloadSchedulingEnabled;
@@ -130,6 +133,7 @@ class AudioPlayer {
   bool _automaticallyWaitsToMinimizeStalling = true;
   bool _canUseNetworkResourcesForLiveStreamingWhilePaused = false;
   double _preferredPeakBitRate = 0;
+  bool _allowsExternalPlayback = false;
   bool _playInterrupted = false;
   bool _platformLoading = false;
   AndroidAudioAttributes? _androidAudioAttributes;
@@ -141,14 +145,22 @@ class AudioPlayer {
 
   /// Creates an [AudioPlayer].
   ///
-  /// Apps requesting remote URLs should specify a `[userAgent]` string with
-  /// this constructor which will be included in the `user-agent` header on all
-  /// HTTP requests (except on web where the browser's user agent will be sent).
-  /// This header helps to identify to the server which app is submitting the
-  /// request. If unspecified, it will default to Apple's Core Audio user agent
-  /// on iOS/macOS, or just_audio's user agent on Android. Note: this feature
-  /// is implemented via a local HTTP proxy which requires non-HTTPS support to
-  /// be enabled. See the README page for setup instructions.
+  /// Apps requesting remote URLs should set the [userAgent] parameter which
+  /// will be set as the `user-agent` header on all requests (except on web
+  /// where the browser's user agent will be used) to identify the client. If
+  /// unspecified, a platform-specific default will be supplied.
+  ///
+  /// Request headers including `user-agent` are sent by default via a local
+  /// HTTP proxy which requires non-HTTPS support to be enabled (see the README
+  /// page for setup instructions). Alternatively, you can set
+  /// [useProxyForRequestHeaders] to `false` to allow supported platforms to
+  /// send the request headers directly without use of the proxy. On iOS/macOS,
+  /// this will use the `AVURLAssetHTTPUserAgentKey` on iOS 16 and above, and
+  /// macOS 13 and above, if `user-agent` is the only header used. Otherwise,
+  /// the `AVURLAssetHTTPHeaderFieldsKey` key will be used. On Android, this
+  /// will use ExoPlayer's `setUserAgent` and `setDefaultRequestProperties`.
+  /// For Linux/Windows federated platform implementations, refer to the
+  /// documentation for that implementation's support.
   ///
   /// The player will automatically pause/duck and resume/unduck when audio
   /// interruptions occur (e.g. a phone call) or when headphones are unplugged.
@@ -171,21 +183,26 @@ class AudioPlayer {
     AudioLoadConfiguration? audioLoadConfiguration,
     AudioPipeline? audioPipeline,
     bool androidOffloadSchedulingEnabled = false,
+    bool useProxyForRequestHeaders = true,
   })  : _id = _uuid.v4(),
         _userAgent = userAgent,
         _androidApplyAudioAttributes = androidApplyAudioAttributes && _isAndroid(),
         _handleAudioSessionActivation = handleAudioSessionActivation,
         _audioLoadConfiguration = audioLoadConfiguration,
         _audioPipeline = audioPipeline ?? AudioPipeline(),
-        _androidOffloadSchedulingEnabled = androidOffloadSchedulingEnabled {
+        _androidOffloadSchedulingEnabled = androidOffloadSchedulingEnabled,
+        _useProxyForRequestHeaders = useProxyForRequestHeaders {
     _audioPipeline._setup(this);
     if (_audioLoadConfiguration?.darwinLoadControl != null) {
       _automaticallyWaitsToMinimizeStalling = _audioLoadConfiguration!.darwinLoadControl!.automaticallyWaitsToMinimizeStalling;
     }
     _playbackEventSubject.add(_playbackEvent);
-    _processingStateSubject.addStream(playbackEventStream.map((event) => event.processingState).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-    _bufferedPositionSubject.addStream(playbackEventStream.map((event) => event.bufferedPosition).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-    _icyMetadataSubject.addStream(playbackEventStream.map((event) => event.icyMetadata).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
+    _processingStateSubject
+        .addStream(playbackEventStream.map((event) => event.processingState).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
+    _bufferedPositionSubject
+        .addStream(playbackEventStream.map((event) => event.bufferedPosition).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
+    _icyMetadataSubject
+        .addStream(playbackEventStream.map((event) => event.icyMetadata).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
     playbackEventStream.pairwise().listen((pair) {
       final prev = pair.first;
       final curr = pair.last;
@@ -211,7 +228,8 @@ class AudioPlayer {
         _positionDiscontinuitySubject.add(PositionDiscontinuity(PositionDiscontinuityReason.autoAdvance, prev, curr));
       }
     }, onError: (Object e, StackTrace st) {});
-    _currentIndexSubject.addStream(playbackEventStream.map((event) => event.currentIndex).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
+    _currentIndexSubject
+        .addStream(playbackEventStream.map((event) => event.currentIndex).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
     _androidAudioSessionIdSubject
         .addStream(playbackEventStream.map((event) => event.androidAudioSessionId).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
     _sequenceStateSubject.addStream(Rx.combineLatest5<List<IndexedAudioSource>?, List<int>?, int?, bool, LoopMode, SequenceState?>(
@@ -373,8 +391,6 @@ class AudioPlayer {
   /// The current skipSilenceEnabled factor of the player.
   bool get skipSilenceEnabled => _skipSilenceEnabledSubject.nvalue!;
 
-  AudioPipeline get audioPipeline => _audioPipeline;
-
   /// A stream of current skipSilenceEnabled factor values.
   Stream<bool> get skipSilenceEnabledStream => _skipSilenceEnabledSubject.stream;
 
@@ -509,6 +525,10 @@ class AudioPlayer {
   /// The preferred peak bit rate (in bits per second) of bandwidth usage on iOS/macOS.
   double get preferredPeakBitRate => _preferredPeakBitRate;
 
+  /// Whether the player allows external playback on iOS/macOS, defaults to
+  /// false.
+  bool get allowsExternalPlayback => _allowsExternalPlayback;
+
   /// The current position of the player.
   Duration get position => _getPositionFor(_playbackEvent);
 
@@ -533,7 +553,8 @@ class AudioPlayer {
     if (_positionSubject == null) {
       _positionSubject = BehaviorSubject<Duration>();
       if (!_disposed) {
-        _positionSubject!.addStream(createPositionStream(steps: 800, minPeriod: const Duration(milliseconds: 16), maxPeriod: const Duration(milliseconds: 200)));
+        _positionSubject!
+            .addStream(createPositionStream(steps: 800, minPeriod: const Duration(milliseconds: 16), maxPeriod: const Duration(milliseconds: 200)));
       }
     }
     return _positionSubject!.stream;
@@ -1006,7 +1027,8 @@ class AudioPlayer {
   Future<void> setAutomaticallyWaitsToMinimizeStalling(final bool automaticallyWaitsToMinimizeStalling) async {
     if (_disposed) return;
     _automaticallyWaitsToMinimizeStalling = automaticallyWaitsToMinimizeStalling;
-    await (await _platform).setAutomaticallyWaitsToMinimizeStalling(SetAutomaticallyWaitsToMinimizeStallingRequest(enabled: automaticallyWaitsToMinimizeStalling));
+    await (await _platform)
+        .setAutomaticallyWaitsToMinimizeStalling(SetAutomaticallyWaitsToMinimizeStallingRequest(enabled: automaticallyWaitsToMinimizeStalling));
   }
 
   /// Sets canUseNetworkResourcesForLiveStreamingWhilePaused on iOS/macOS,
@@ -1023,6 +1045,13 @@ class AudioPlayer {
     if (_disposed) return;
     _preferredPeakBitRate = preferredPeakBitRate;
     await (await _platform).setPreferredPeakBitRate(SetPreferredPeakBitRateRequest(bitRate: preferredPeakBitRate));
+  }
+
+  /// Sets allowsExternalPlayback on iOS/macOS, defaults to false.
+  Future<void> setAllowsExternalPlayback(final bool allowsExternalPlayback) async {
+    if (_disposed) return;
+    _allowsExternalPlayback = allowsExternalPlayback;
+    await (await _platform).setAllowsExternalPlayback(SetAllowsExternalPlaybackRequest(allowsExternalPlayback: allowsExternalPlayback));
   }
 
   /// Seeks to a particular [position]. If a composition of multiple
@@ -1080,8 +1109,8 @@ class AudioPlayer {
 
   Future<void> _internalSetAndroidAudioAttributes(AudioPlayerPlatform platform, AndroidAudioAttributes audioAttributes) async {
     if (!_isAndroid() && !_isUnitTest()) return;
-    await platform.setAndroidAudioAttributes(
-        SetAndroidAudioAttributesRequest(contentType: audioAttributes.contentType.index, flags: audioAttributes.flags.value, usage: audioAttributes.usage.value));
+    await platform.setAndroidAudioAttributes(SetAndroidAudioAttributesRequest(
+        contentType: audioAttributes.contentType.index, flags: audioAttributes.flags.value, usage: audioAttributes.usage.value));
   }
 
   /// Release all resources associated with this player. You must invoke this
@@ -1246,8 +1275,10 @@ class AudioPlayer {
           ? await (_nativePlatform = _pluginPlatform.init(InitRequest(
               id: _id,
               audioLoadConfiguration: _audioLoadConfiguration?._toMessage(),
-              androidAudioEffects: (_isAndroid() || _isUnitTest()) ? _audioPipeline.androidAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
-              darwinAudioEffects: (_isDarwin() || _isUnitTest()) ? _audioPipeline.darwinAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
+              androidAudioEffects:
+                  (_isAndroid() || _isUnitTest()) ? _audioPipeline.androidAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
+              darwinAudioEffects:
+                  (_isDarwin() || _isUnitTest()) ? _audioPipeline.darwinAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
               androidOffloadSchedulingEnabled: _androidOffloadSchedulingEnabled,
             )))
           : (_idlePlatform = _IdleAudioPlayer(id: _id, sequenceStream: sequenceStream));
@@ -1521,7 +1552,8 @@ class PlayerState {
   int get hashCode => Object.hash(playing, processingState);
 
   @override
-  bool operator ==(Object other) => other.runtimeType == runtimeType && other is PlayerState && other.playing == playing && other.processingState == processingState;
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType && other is PlayerState && other.playing == playing && other.processingState == processingState;
 }
 
 class IcyInfo {
@@ -1648,7 +1680,7 @@ class AudioLoadConfiguration {
   /// Speed control for live streams on Android.
   final AndroidLivePlaybackSpeedControl? androidLivePlaybackSpeedControl;
 
-  AudioLoadConfiguration({
+  const AudioLoadConfiguration({
     this.darwinLoadControl,
     this.androidLoadControl,
     this.androidLivePlaybackSpeedControl,
@@ -1680,7 +1712,7 @@ class DarwinLoadControl {
   /// second.
   final double? preferredPeakBitRate;
 
-  DarwinLoadControl({
+  const DarwinLoadControl({
     this.automaticallyWaitsToMinimizeStalling = true,
     this.preferredForwardBufferDuration,
     this.canUseNetworkResourcesForLiveStreamingWhilePaused = false,
@@ -1723,7 +1755,7 @@ class AndroidLoadControl {
   /// (Android) The back buffer duration.
   final Duration backBufferDuration;
 
-  AndroidLoadControl({
+  const AndroidLoadControl({
     this.minBufferDuration = const Duration(seconds: 50),
     this.maxBufferDuration = const Duration(seconds: 50),
     this.bufferForPlaybackDuration = const Duration(milliseconds: 2500),
@@ -1775,7 +1807,7 @@ class AndroidLivePlaybackSpeedControl {
   /// achievable during playback.
   final double minPossibleLiveOffsetSmoothingFactor;
 
-  AndroidLivePlaybackSpeedControl({
+  const AndroidLivePlaybackSpeedControl({
     this.fallbackMinPlaybackSpeed = 0.97,
     this.fallbackMaxPlaybackSpeed = 1.03,
     this.minUpdateInterval = const Duration(seconds: 1),
@@ -1793,6 +1825,52 @@ class AndroidLivePlaybackSpeedControl {
         maxLiveOffsetErrorForUnitSpeed: maxLiveOffsetErrorForUnitSpeed,
         targetLiveOffsetIncrementOnRebuffer: targetLiveOffsetIncrementOnRebuffer,
         minPossibleLiveOffsetSmoothingFactor: minPossibleLiveOffsetSmoothingFactor,
+      );
+}
+
+class ProgressiveAudioSourceOptions {
+  final AndroidExtractorOptions? androidExtractorOptions;
+  final DarwinAssetOptions? darwinAssetOptions;
+
+  const ProgressiveAudioSourceOptions({
+    this.androidExtractorOptions,
+    this.darwinAssetOptions,
+  });
+
+  ProgressiveAudioSourceOptionsMessage _toMessage() => ProgressiveAudioSourceOptionsMessage(
+        androidExtractorOptions: androidExtractorOptions?._toMessage(),
+        darwinAssetOptions: darwinAssetOptions?._toMessage(),
+      );
+}
+
+class DarwinAssetOptions {
+  final bool preferPreciseDurationAndTiming;
+
+  const DarwinAssetOptions({this.preferPreciseDurationAndTiming = false});
+
+  DarwinAssetOptionsMessage _toMessage() => DarwinAssetOptionsMessage(
+        preferPreciseDurationAndTiming: preferPreciseDurationAndTiming,
+      );
+}
+
+class AndroidExtractorOptions {
+  static const flagMp3EnableIndexSeeking = 1 << 2;
+  static const flagMp3DisableId3Metadata = 1 << 3;
+
+  final bool constantBitrateSeekingEnabled;
+  final bool constantBitrateSeekingAlwaysEnabled;
+  final int mp3Flags;
+
+  const AndroidExtractorOptions({
+    this.constantBitrateSeekingEnabled = true,
+    this.constantBitrateSeekingAlwaysEnabled = false,
+    this.mp3Flags = 0,
+  });
+
+  AndroidExtractorOptionsMessage _toMessage() => AndroidExtractorOptionsMessage(
+        constantBitrateSeekingEnabled: constantBitrateSeekingEnabled,
+        constantBitrateSeekingAlwaysEnabled: constantBitrateSeekingAlwaysEnabled,
+        mp3Flags: mp3Flags,
       );
 }
 
@@ -1992,6 +2070,8 @@ abstract class AudioSource {
     player._registerAudioSource(this);
   }
 
+  String? get _userAgent => _player?._userAgent;
+
   void _shuffle({int? initialIndex});
 
   @mustCallSuper
@@ -2043,12 +2123,20 @@ abstract class UriAudioSource extends IndexedAudioSource {
   /// [uri].
   Uri get _effectiveUri => _overrideUri ?? uri;
 
+  Map<String, String>? get _mergedHeaders => headers == null && _userAgent == null
+      ? null
+      : {
+          if (headers != null)
+            for (var key in headers!.keys) key: headers![key]!,
+          if (_userAgent != null) 'User-Agent': _userAgent!,
+        };
+
   @override
   Future<void> _setup(AudioPlayer player) async {
     await super._setup(player);
     if (uri.scheme == 'asset') {
       _overrideUri = await _loadAsset(uri.pathSegments.join('/'));
-    } else if (uri.scheme != 'file' && !kIsWeb && (headers != null || player._userAgent != null)) {
+    } else if (uri.scheme != 'file' && !kIsWeb && player._useProxyForRequestHeaders && (headers != null || player._userAgent != null)) {
       await player._proxy.ensureRunning();
       _overrideUri = player._proxy.addUriAudioSource(this);
     }
@@ -2111,10 +2199,24 @@ abstract class UriAudioSource extends IndexedAudioSource {
 /// If headers are set, just_audio will create a cleartext local HTTP proxy on
 /// your device to forward HTTP requests with headers included.
 class ProgressiveAudioSource extends UriAudioSource {
-  ProgressiveAudioSource(Uri uri, {Map<String, String>? headers, dynamic tag, Duration? duration}) : super(uri, headers: headers, tag: tag, duration: duration);
+  final ProgressiveAudioSourceOptions? options;
+
+  ProgressiveAudioSource(
+    super.uri, {
+    super.headers,
+    super.tag,
+    super.duration,
+    this.options,
+  });
 
   @override
-  AudioSourceMessage _toMessage() => ProgressiveAudioSourceMessage(id: _id, uri: _effectiveUri.toString(), headers: headers, tag: tag);
+  AudioSourceMessage _toMessage() => ProgressiveAudioSourceMessage(
+        id: _id,
+        uri: _effectiveUri.toString(),
+        headers: _mergedHeaders,
+        tag: tag,
+        options: options?._toMessage(),
+      );
 }
 
 /// An [AudioSource] representing a DASH stream. The following URI schemes are
@@ -2135,7 +2237,12 @@ class DashAudioSource extends UriAudioSource {
   DashAudioSource(Uri uri, {Map<String, String>? headers, dynamic tag, Duration? duration}) : super(uri, headers: headers, tag: tag, duration: duration);
 
   @override
-  AudioSourceMessage _toMessage() => DashAudioSourceMessage(id: _id, uri: _effectiveUri.toString(), headers: headers, tag: tag);
+  AudioSourceMessage _toMessage() => DashAudioSourceMessage(
+        id: _id,
+        uri: _effectiveUri.toString(),
+        headers: _mergedHeaders,
+        tag: tag,
+      );
 }
 
 /// An [AudioSource] representing an HLS stream. The following URI schemes are
@@ -2155,7 +2262,12 @@ class HlsAudioSource extends UriAudioSource {
   HlsAudioSource(Uri uri, {Map<String, String>? headers, dynamic tag, Duration? duration}) : super(uri, headers: headers, tag: tag, duration: duration);
 
   @override
-  AudioSourceMessage _toMessage() => HlsAudioSourceMessage(id: _id, uri: _effectiveUri.toString(), headers: headers, tag: tag);
+  AudioSourceMessage _toMessage() => HlsAudioSourceMessage(
+        id: _id,
+        uri: _effectiveUri.toString(),
+        headers: _mergedHeaders,
+        tag: tag,
+      );
 }
 
 /// An [AudioSource] for a period of silence.
@@ -2222,7 +2334,7 @@ class ConcatenatingAudioSource extends AudioSource {
       if (initialIndexWithinThisChild) {
         localInitialIndex = ci;
       }
-      final childInitialIndex = initialIndexWithinThisChild ? (initialIndex! - si) : null;
+      final childInitialIndex = initialIndexWithinThisChild ? (initialIndex - si) : null;
       child._shuffle(initialIndex: childInitialIndex);
       si += childLength;
     }
@@ -2237,8 +2349,8 @@ class ConcatenatingAudioSource extends AudioSource {
     if (_player != null) {
       _player!._broadcastSequence();
       await audioSource._setup(_player!);
-      await (await _player!._platform)
-          .concatenatingInsertAll(ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
+      await (await _player!._platform).concatenatingInsertAll(
+          ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
     }
   }
 
@@ -2249,8 +2361,8 @@ class ConcatenatingAudioSource extends AudioSource {
     if (_player != null) {
       _player!._broadcastSequence();
       await audioSource._setup(_player!);
-      await (await _player!._platform)
-          .concatenatingInsertAll(ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
+      await (await _player!._platform).concatenatingInsertAll(
+          ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
     }
   }
 
@@ -2264,8 +2376,8 @@ class ConcatenatingAudioSource extends AudioSource {
       for (var child in children) {
         await child._setup(_player!);
       }
-      await (await _player!._platform).concatenatingInsertAll(
-          ConcatenatingInsertAllRequest(id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
+      await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
+          id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
     }
   }
 
@@ -2278,8 +2390,8 @@ class ConcatenatingAudioSource extends AudioSource {
       for (var child in children) {
         await child._setup(_player!);
       }
-      await (await _player!._platform).concatenatingInsertAll(
-          ConcatenatingInsertAllRequest(id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
+      await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
+          id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
     }
   }
 
@@ -2290,8 +2402,8 @@ class ConcatenatingAudioSource extends AudioSource {
     _shuffleOrder.removeRange(index, index + 1);
     if (_player != null) {
       _player!._broadcastSequence();
-      await (await _player!._platform)
-          .concatenatingRemoveRange(ConcatenatingRemoveRangeRequest(id: _id, startIndex: index, endIndex: index + 1, shuffleOrder: List.of(_shuffleOrder.indices)));
+      await (await _player!._platform).concatenatingRemoveRange(
+          ConcatenatingRemoveRangeRequest(id: _id, startIndex: index, endIndex: index + 1, shuffleOrder: List.of(_shuffleOrder.indices)));
     }
   }
 
@@ -2728,6 +2840,7 @@ class LockCachingAudioSource extends StreamAudioSource {
       if (partialCacheFile.existsSync()) {
         partialCacheFile.renameSync(cacheFile.path);
       }
+
       await subscription.cancel();
       _downloading = false;
     }, onError: (Object e, StackTrace stackTrace) async {
@@ -2938,8 +3051,10 @@ _ProxyHandler _proxyHandlerForUri(
     // Try to make normal request
     String? host;
     try {
-      final requestHeaders = <String, String>{if (headers != null) ...headers};
+      final requestHeaders = <String, String>{};
       request.headers.forEach((name, value) => requestHeaders[name] = value.join(', '));
+      // write supplied headers last (to ensure supplied headers aren't overwritten)
+      headers?.forEach((name, value) => requestHeaders[name] = value);
       final originRequest = await _getUrl(client, redirectedUri ?? uri, headers: requestHeaders);
       host = originRequest.headers.value(HttpHeaders.hostHeader);
       final originResponse = await originRequest.close();
@@ -3217,7 +3332,8 @@ class _IdleAudioPlayer extends AudioPlayerPlatform {
   }
 
   @override
-  Future<SetAutomaticallyWaitsToMinimizeStallingResponse> setAutomaticallyWaitsToMinimizeStalling(SetAutomaticallyWaitsToMinimizeStallingRequest request) async {
+  Future<SetAutomaticallyWaitsToMinimizeStallingResponse> setAutomaticallyWaitsToMinimizeStalling(
+      SetAutomaticallyWaitsToMinimizeStallingRequest request) async {
     return SetAutomaticallyWaitsToMinimizeStallingResponse();
   }
 

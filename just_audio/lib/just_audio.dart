@@ -814,6 +814,16 @@ class AudioPlayer {
       return duration;
     } on PlatformException catch (e) {
       try {
+        // cant connect to servers
+        if (e.code == "-1004" && source is LockCachingAudioSource) {
+          // proxy is offline
+          try {
+            await _proxy._server.close(force: true);
+          } catch (_) {
+            // ignore err
+          }
+          await _proxy.start();
+        }
         throw PlayerException(int.parse(e.code), e.message);
       } on FormatException catch (_) {
         if (e.code == 'abort') {

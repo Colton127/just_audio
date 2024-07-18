@@ -395,6 +395,8 @@ class AudioPlayer {
   /// A stream of current skipSilenceEnabled factor values.
   Stream<bool> get skipSilenceEnabledStream => _skipSilenceEnabledSubject.stream;
 
+  AudioPipeline get audioPipeline => _audioPipeline;
+
   /// The position up to which buffered audio is available.
   Duration get bufferedPosition => _bufferedPositionSubject.nvalue ?? Duration.zero;
 

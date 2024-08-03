@@ -2949,20 +2949,26 @@ class LockCachingAudioSource extends StreamAudioSource {
         if (response.statusCode != 200) {
           throw Exception('HTTP Status Error: ${response.statusCode}');
         }
-        _response = _fetch(response).catchError((dynamic error, StackTrace? stackTrace) async {
-          // So that we can restart later
-          _downloading = false;
-          _response = null;
-          // Cancel any pending request
-          for (final req in _requests) {
-            req.fail(error, stackTrace);
+        _response = Future(() async {
+          try {
+            return await _fetch(response);
+          } catch (error, stackTrace) {
+            // Handle error from _fetch
+            _downloading = false;
+            _response = null;
+            // Cancel any pending request
+            for (final req in _requests) {
+              req.fail(error, stackTrace);
+            }
+            return Future<HttpClientResponse>.error(error, stackTrace);
           }
-          return Future<HttpClientResponse>.error(error as Object, stackTrace);
         });
-      } catch (e) {
+      } catch (e, stackTrace) {
         httpClient.close();
         _downloading = false;
-        rethrow;
+        // Handle or rethrow the error
+        print('Error in _createResponse: $e');
+        return Future.error(e, stackTrace);
       }
     }
   }

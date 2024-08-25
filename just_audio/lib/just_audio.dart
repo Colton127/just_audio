@@ -100,7 +100,6 @@ class AudioPlayer {
   final String _id;
   final _proxy = _ProxyHttpServer();
   AudioSource? _audioSource;
-  final Map<String, AudioSource> _audioSources = {};
   bool _disposed = false;
   _InitialSeekValues? _initialSeekValues;
   final AudioPipeline _audioPipeline;
@@ -720,6 +719,7 @@ class AudioPlayer {
     Duration? initialPosition,
   }) async {
     if (_disposed) return null;
+    _audioSource?._dispose();
     _audioSource = null;
     _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
     _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
@@ -780,10 +780,6 @@ class AudioPlayer {
     }
   }
 
-  void _registerAudioSource(AudioSource source) {
-    _audioSources[source._id] = source;
-  }
-
   Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, {_InitialSeekValues? initialSeekValues}) async {
     final activationNumber = _activationCount;
     void checkInterruption() {
@@ -817,6 +813,7 @@ class AudioPlayer {
       checkInterruption();
       return duration;
     } on PlatformException catch (e) {
+      _restartProxyServerOnError(e, source);
       try {
         throw PlayerException(int.parse(e.code), e.message, (e.details as Map<dynamic, dynamic>?)?.cast<String, dynamic>());
       } on FormatException catch (_) {
@@ -826,6 +823,17 @@ class AudioPlayer {
           throw PlayerException(9999999, e.message);
         }
       }
+    }
+  }
+
+  void _restartProxyServerOnError(PlatformException e, AudioSource source) async {
+    try {
+      if ((e.code == "-1004" || e.code == "-1005") && source is LockCachingAudioSource) {
+        await _proxy.stop(force: true);
+        await _proxy.start();
+      }
+    } catch (e) {
+      print('Error restarting proxy server: $e');
     }
   }
 
@@ -1153,11 +1161,8 @@ class AudioPlayer {
       await _disposePlatform(_idlePlatform!);
       _idlePlatform = null;
     }
+    _audioSource?._dispose();
     _audioSource = null;
-    for (var s in _audioSources.values) {
-      s._dispose();
-    }
-    _audioSources.clear();
     _proxy.stop();
     await _durationSubject.close();
     await _loopModeSubject.close();
@@ -1971,24 +1976,33 @@ class _ProxyHttpServer {
   Future<dynamic> start() async {
     _running = true;
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    _server.listen((request) async {
-      if (request.method == 'GET') {
-        final uriPath = _requestKey(request.uri);
-        final handler = _handlerMap[uriPath]!;
-        handler(this, request);
-      }
-    }, onDone: () {
-      _running = false;
-    }, onError: (Object e, StackTrace st) {
-      _running = false;
-    });
+    _server.listen(
+      (request) async {
+        if (request.method == 'GET') {
+          final uriPath = _requestKey(request.uri);
+          final handler = _handlerMap[uriPath]!;
+          handler(this, request);
+        }
+      },
+      onDone: () {
+        _running = false;
+      },
+      onError: (Object e, StackTrace st) async {
+        await stop(force: true);
+      },
+      cancelOnError: true,
+    );
   }
 
   /// Stops the server
-  Future<dynamic> stop() async {
+  Future<dynamic> stop({bool force = false}) async {
     if (!_running) return;
     _running = false;
-    return await _server.close();
+    try {
+      await _server.close(force: force);
+    } catch (_) {
+      // ignore
+    }
   }
 }
 
@@ -2113,7 +2127,6 @@ abstract class AudioSource {
   @mustCallSuper
   Future<void> _setup(AudioPlayer player) async {
     _player = player;
-    player._registerAudioSource(this);
   }
 
   String? get _userAgent => _player?._userAgent;
@@ -2889,6 +2902,8 @@ class LockCachingAudioSource extends StreamAudioSource {
 
       await subscription.cancel();
       _downloading = false;
+      await sink.flush();
+      await sink.close();
     }, onError: (Object e, StackTrace stackTrace) async {
       final partialCacheFile = await _partialCacheFile;
       if (partialCacheFile.existsSync()) {
@@ -3027,10 +3042,9 @@ typedef _ProxyHandler = void Function(_ProxyHttpServer server, HttpRequest reque
 /// A proxy handler for serving audio from a [StreamAudioSource].
 _ProxyHandler _proxyHandlerForSource(StreamAudioSource source) {
   Future<void> handler(_ProxyHttpServer server, HttpRequest request) async {
+    //  try {
     final rangeRequest = _HttpRangeRequest.parse(request.headers[HttpHeaders.rangeHeader]);
-
     request.response.headers.clear();
-
     StreamAudioResponse sourceResponse;
     Stream<List<int>> stream;
     try {
@@ -3077,7 +3091,11 @@ _ProxyHandler _proxyHandlerForSource(StreamAudioSource source) {
 
     await completer.future;
 
-    await request.response.close();
+    try {
+      await request.response.close();
+    } catch (e) {
+      // ignore: error
+    }
   }
 
   return handler;

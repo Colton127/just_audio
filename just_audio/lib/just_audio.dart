@@ -102,7 +102,7 @@ class AudioPlayer {
   AudioSource? _audioSource;
   bool _disposed = false;
   _InitialSeekValues? _initialSeekValues;
-  final AudioPipeline _audioPipeline;
+  AudioPipeline _audioPipeline;
 
   PlaybackEvent _playbackEvent = PlaybackEvent();
   final _playbackEventSubject = BehaviorSubject<PlaybackEvent>(sync: true);
@@ -394,6 +394,7 @@ class AudioPlayer {
   /// A stream of current skipSilenceEnabled factor values.
   Stream<bool> get skipSilenceEnabledStream => _skipSilenceEnabledSubject.stream;
 
+  /// The current [AudioPipeline]
   AudioPipeline get audioPipeline => _audioPipeline;
 
   /// The position up to which buffered audio is available.
@@ -540,6 +541,19 @@ class AudioPlayer {
       return playbackEvent.duration == null || result <= playbackEvent.duration! ? result : playbackEvent.duration!;
     } else {
       return playbackEvent.updatePosition;
+    }
+  }
+
+  Future<void> setAudioPipeline(AudioPipeline audioPipeline) async {
+    if (_disposed) return;
+    _audioPipeline = audioPipeline;
+    for (var audioEffect in _audioPipeline._audioEffects) {
+      audioEffect.setup(this);
+    }
+    if (_active) {
+      //Reinitialize the platform with the new audio pipeline
+      await _setPlatformActive(false);
+      await _setPlatformActive(true);
     }
   }
 
@@ -719,7 +733,7 @@ class AudioPlayer {
     Duration? initialPosition,
   }) async {
     if (_disposed) return null;
-    _audioSource?._dispose();
+    _audioSource?.dispose();
     _audioSource = null;
     _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
     _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
@@ -790,7 +804,7 @@ class AudioPlayer {
     }
 
     try {
-      await source._setup(this);
+      await source.setup(this);
       checkInterruption();
       source._shuffle(initialIndex: initialSeekValues?.index ?? 0);
       _broadcastSequence();
@@ -1161,7 +1175,7 @@ class AudioPlayer {
       await _disposePlatform(_idlePlatform!);
       _idlePlatform = null;
     }
-    _audioSource?._dispose();
+    _audioSource?.dispose();
     _audioSource = null;
     _proxy.stop();
     await _durationSubject.close();
@@ -2125,7 +2139,7 @@ abstract class AudioSource {
   AudioSource() : _id = _uuid.v4();
 
   @mustCallSuper
-  Future<void> _setup(AudioPlayer player) async {
+  Future<void> setup(AudioPlayer player) async {
     _player = player;
   }
 
@@ -2134,7 +2148,7 @@ abstract class AudioSource {
   void _shuffle({int? initialIndex});
 
   @mustCallSuper
-  void _dispose() {
+  void dispose() {
     // Without this we might make _player "late".
     _player = null;
   }
@@ -2191,8 +2205,8 @@ abstract class UriAudioSource extends IndexedAudioSource {
         };
 
   @override
-  Future<void> _setup(AudioPlayer player) async {
-    await super._setup(player);
+  Future<void> setup(AudioPlayer player) async {
+    await super.setup(player);
     if (uri.scheme == 'asset') {
       _overrideUri = await _loadAsset(uri.pathSegments.join('/'));
     } else if (uri.scheme != 'file' && !kIsWeb && player._useProxyForRequestHeaders && (headers != null || player._userAgent != null)) {
@@ -2374,10 +2388,10 @@ class ConcatenatingAudioSource extends AudioSource {
           ..insert(0, children.length);
 
   @override
-  Future<void> _setup(AudioPlayer player) async {
-    await super._setup(player);
+  Future<void> setup(AudioPlayer player) async {
+    await super.setup(player);
     for (var source in children) {
-      await source._setup(player);
+      await source.setup(player);
     }
   }
 
@@ -2407,7 +2421,7 @@ class ConcatenatingAudioSource extends AudioSource {
     _shuffleOrder.insert(index, 1);
     if (_player != null) {
       _player!._broadcastSequence();
-      await audioSource._setup(_player!);
+      await audioSource.setup(_player!);
       await (await _player!._platform).concatenatingInsertAll(
           ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
     }
@@ -2419,7 +2433,7 @@ class ConcatenatingAudioSource extends AudioSource {
     _shuffleOrder.insert(index, 1);
     if (_player != null) {
       _player!._broadcastSequence();
-      await audioSource._setup(_player!);
+      await audioSource.setup(_player!);
       await (await _player!._platform).concatenatingInsertAll(
           ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
     }
@@ -2433,7 +2447,7 @@ class ConcatenatingAudioSource extends AudioSource {
     if (_player != null) {
       _player!._broadcastSequence();
       for (var child in children) {
-        await child._setup(_player!);
+        await child.setup(_player!);
       }
       await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
           id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
@@ -2447,7 +2461,7 @@ class ConcatenatingAudioSource extends AudioSource {
     if (_player != null) {
       _player!._broadcastSequence();
       for (var child in children) {
-        await child._setup(_player!);
+        await child.setup(_player!);
       }
       await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
           id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
@@ -2550,9 +2564,9 @@ class ClippingAudioSource extends IndexedAudioSource {
   }) : super(tag: tag, duration: duration);
 
   @override
-  Future<void> _setup(AudioPlayer player) async {
-    await super._setup(player);
-    await child._setup(player);
+  Future<void> setup(AudioPlayer player) async {
+    await super.setup(player);
+    await child.setup(player);
   }
 
   @override
@@ -2572,9 +2586,9 @@ class LoopingAudioSource extends AudioSource {
   }) : super();
 
   @override
-  Future<void> _setup(AudioPlayer player) async {
-    await super._setup(player);
-    await child._setup(player);
+  Future<void> setup(AudioPlayer player) async {
+    await super.setup(player);
+    await child.setup(player);
   }
 
   @override
@@ -2600,8 +2614,8 @@ abstract class StreamAudioSource extends IndexedAudioSource {
   StreamAudioSource({dynamic tag}) : super(tag: tag);
 
   @override
-  Future<void> _setup(AudioPlayer player) async {
-    await super._setup(player);
+  Future<void> setup(AudioPlayer player) async {
+    await super.setup(player);
     if (kIsWeb) {
       final response = await request();
       _uri = _encodeDataUrl(await base64.encoder.bind(response.stream).join(), response.contentType);
@@ -3489,7 +3503,7 @@ class AudioPipeline {
 
   void _setup(AudioPlayer player) {
     for (var effect in _audioEffects) {
-      effect._setup(player);
+      effect.setup(player);
     }
   }
 }
@@ -3508,7 +3522,7 @@ abstract class AudioEffect {
   AudioEffect();
 
   /// Called when an [AudioEffect] is attached to an [AudioPlayer].
-  void _setup(AudioPlayer player) {
+  void setup(AudioPlayer player) {
     assert(_player == null);
     _player = player;
   }

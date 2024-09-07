@@ -1396,7 +1396,7 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      if (audioSource != null) {
+      if (active && audioSource != null) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;
@@ -2158,6 +2158,7 @@ abstract class AudioSource {
   List<IndexedAudioSource> get sequence;
 
   List<int> get shuffleIndices;
+  AudioPlayer? get player => _player;
 
   @override
   int get hashCode => _id.hashCode;

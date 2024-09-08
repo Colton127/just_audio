@@ -1983,7 +1983,11 @@ class _ProxyHttpServer {
   /// Start the server if it is not already running.
   Future<dynamic> ensureRunning() async {
     if (_running) return;
-    return await start();
+    await runZonedGuarded(() async {
+      await start();
+    }, (e, stackTrace) {
+      print('Proxy exception: $e');
+    });
   }
 
   /// Starts the server.
@@ -3105,11 +3109,11 @@ _ProxyHandler _proxyHandlerForSource(StreamAudioSource source) {
     });
 
     await completer.future;
-
+    await request.response.flush();
     try {
       await request.response.close();
     } catch (e) {
-      // ignore: error
+      // ignore errors when closing the response
     }
   }
 

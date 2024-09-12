@@ -734,10 +734,9 @@ class AudioPlayer {
   }) async {
     if (_disposed) return null;
     _audioSource?.dispose();
-    _audioSource = null;
+    _audioSource = source;
     _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
     _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
-    _audioSource = source;
     _broadcastSequence();
     Duration? duration;
     if (playing) preload = true;
@@ -1972,6 +1971,12 @@ class _ProxyHttpServer {
     return uri;
   }
 
+  void removeAudioSource(Uri uri) {
+    if (!_running) return;
+    final path = _requestKey(uri);
+    _handlerMap.remove(path);
+  }
+
   Uri _sourceUri(StreamAudioSource source) => Uri.http('${InternetAddress.loopbackIPv4.address}:$port', '/id/${source._id}');
 
   /// A unique key for each request that can be processed by this proxy,
@@ -1998,8 +2003,13 @@ class _ProxyHttpServer {
       (request) async {
         if (request.method == 'GET') {
           final uriPath = _requestKey(request.uri);
-          final handler = _handlerMap[uriPath]!;
-          handler(this, request);
+          final handler = _handlerMap[uriPath];
+          if (handler == null) {
+            request.response.statusCode = HttpStatus.clientClosedRequest;
+            request.response.close();
+          } else {
+            handler(this, request);
+          }
         }
       },
       onDone: () {
@@ -2628,6 +2638,14 @@ abstract class StreamAudioSource extends IndexedAudioSource {
       await player._proxy.ensureRunning();
       _uri = player._proxy.addStreamAudioSource(this);
     }
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (!kIsWeb && _uri != null) {
+      player?._proxy.removeAudioSource(_uri!);
+    }
+    return super.dispose();
   }
 
   /// Used by the player to request a byte range of encoded audio data in small

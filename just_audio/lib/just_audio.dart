@@ -1395,7 +1395,7 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      if (active && audioSource != null) {
+      if (active && _audioSource != null && !_disposed) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;

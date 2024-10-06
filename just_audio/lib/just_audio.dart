@@ -1166,6 +1166,8 @@ class AudioPlayer {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _audioSource?.dispose();
+    _audioSource = null;
     if (_nativePlatform != null) {
       await _disposePlatform(await _nativePlatform!);
       _nativePlatform = null;
@@ -1174,8 +1176,6 @@ class AudioPlayer {
       await _disposePlatform(_idlePlatform!);
       _idlePlatform = null;
     }
-    _audioSource?.dispose();
-    _audioSource = null;
     _proxy.stop();
     await _durationSubject.close();
     await _loopModeSubject.close();
@@ -1241,7 +1241,6 @@ class AudioPlayer {
     _active = active;
     final position = this.position;
     final currentIndex = this.currentIndex;
-    final audioSource = _audioSource;
 
     void subscribeToEvents(AudioPlayerPlatform platform) {
       _playerDataSubscription = platform.playerDataMessageStream.listen((message) {
@@ -1332,13 +1331,6 @@ class AudioPlayer {
       _platformValue = platform;
 
       if (active) {
-        if (audioSource != null) {
-          _playbackEventSubject.add(_playbackEvent = _playbackEvent.copyWith(
-            updatePosition: position,
-            processingState: ProcessingState.loading,
-          ));
-        }
-
         final automaticallyWaitsToMinimizeStalling = this.automaticallyWaitsToMinimizeStalling;
         final playing = this.playing;
         // To avoid a glitch in ExoPlayer, ensure that any requested audio
@@ -1395,11 +1387,12 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      if (active && _audioSource != null && !_disposed) {
+      final audioSource = _audioSource;
+      if (active && audioSource != null) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;
-          final duration = await _load(platform, _audioSource!, initialSeekValues: initialSeekValues);
+          final duration = await _load(platform, audioSource, initialSeekValues: initialSeekValues);
           if (checkInterruption()) return platform;
           durationCompleter.complete(duration);
         } catch (e, stackTrace) {

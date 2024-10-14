@@ -1166,8 +1166,6 @@ class AudioPlayer {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _audioSource?.dispose();
-    _audioSource = null;
     if (_nativePlatform != null) {
       await _disposePlatform(await _nativePlatform!);
       _nativePlatform = null;
@@ -1176,6 +1174,8 @@ class AudioPlayer {
       await _disposePlatform(_idlePlatform!);
       _idlePlatform = null;
     }
+    _audioSource?.dispose();
+    _audioSource = null;
     _proxy.stop();
     await _durationSubject.close();
     await _loopModeSubject.close();

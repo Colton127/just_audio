@@ -40,12 +40,12 @@
     } else if ([@"disposePlayer" isEqualToString:call.method]) {
         NSDictionary *request = (NSDictionary *)call.arguments;
         NSString *playerId = request[@"id"];
-        [_players[playerId] dispose];
+        [_players[playerId] dispose:NO];
         [_players setValue:nil forKey:playerId];
         result(@{});
     } else if ([@"disposeAllPlayers" isEqualToString:call.method]) {
         for (NSString *playerId in _players) {
-            [_players[playerId] dispose];
+            [_players[playerId] dispose:NO];
         }
         [_players removeAllObjects];
         result(@{});
@@ -56,7 +56,7 @@
 
 - (void)dealloc {
     for (NSString *playerId in _players) {
-        [_players[playerId] dispose];
+        [_players[playerId] dispose:YES];
     }
     [_players removeAllObjects];
 }

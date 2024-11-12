@@ -1326,10 +1326,21 @@
     }
 }
 
-- (void)dispose {
+- (void)dispose:(BOOL)calledFromDealloc {
     if (!_player) return;
     if (_processingState != none) {
         [_player pause];
+
+        [self updatePosition];
+        if (!calledFromDealloc) {
+            [self broadcastPlaybackEvent];
+        }
+        if (_playResult) {
+            //NSLog(@"PLAY FINISHED DUE TO STOP");
+            _playResult(@{});
+            _playResult = nil;
+        }
+
         _processingState = none;
         // If used just before destroying the current FlutterEngine, this will result in:
         // NSInternalInconsistencyException: 'Sending a message before the FlutterEngine has been run.'

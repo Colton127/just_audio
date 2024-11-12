@@ -7,7 +7,7 @@
 @property (readonly, nonatomic) float speed;
 
 - (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar playerId:(NSString*)idParam loadConfiguration:(NSDictionary *)loadConfiguration;
-- (void)dispose;
+- (void)dispose:(BOOL)calledFromDealloc;
 
 @end
 

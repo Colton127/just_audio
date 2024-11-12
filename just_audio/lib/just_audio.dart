@@ -775,6 +775,7 @@ class AudioPlayer {
       final initialSeekValues = _initialSeekValues;
       _initialSeekValues = null;
       final loadNumber = ++_loadCount;
+      //Potential race condition here if audioSource changes while awaiting platform.
       return await _load(await _platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
     } else {
       // This will implicitly load the current audio source.
@@ -812,6 +813,7 @@ class AudioPlayer {
     }
 
     try {
+      checkInterruption();
       await source.setup(this);
       checkInterruption();
       source._shuffle(initialIndex: initialSeekValues?.index ?? 0);

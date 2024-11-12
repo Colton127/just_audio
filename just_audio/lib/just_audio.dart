@@ -835,7 +835,7 @@ class AudioPlayer {
       _durationSubject.add(duration);
       if (platform != _platformValue) {
         // the platform has changed since we started loading, so abort.
-        throw PlatformException(code: 'abort', message: 'Loading interrupted');
+        throw PlatformException(code: 'abort', message: 'Loading interrupted (PlatformValue updated)');
       }
       // Wait for loading state to pass.
       await processingStateStream.firstWhere((state) => state != ProcessingState.loading);

@@ -139,6 +139,10 @@ class AudioPlayer {
   bool _allowsExternalPlayback = false;
   bool _playInterrupted = false;
   bool _platformLoading = false;
+
+  ///If the platform is loading, but an audioSource hasn't been set yet
+  bool _loadedActivePlatform = false;
+
   AndroidAudioAttributes? _androidAudioAttributes;
   WebCrossOrigin? _webCrossOrigin;
   final bool _androidApplyAudioAttributes;
@@ -767,10 +771,10 @@ class AudioPlayer {
     if (_audioSource == null) {
       throw Exception('Must set AudioSource before loading');
     }
-    if (_active) {
+    if (_active && _loadedActivePlatform) {
       final initialSeekValues = _initialSeekValues;
       _initialSeekValues = null;
-      final platform = await _platform; //Potential race condition here if load() is called multiple times while awaiting platform
+      final platform = await _platform; //Potential race condition here if _load() is called multiple times while awaiting platform
       return await _load(platform, _audioSource!, initialSeekValues: initialSeekValues);
     } else {
       // This will implicitly load the current audio source.
@@ -1208,6 +1212,7 @@ class AudioPlayer {
     if (_disposed) return null;
     if (!force && (active == _active)) return _durationFuture;
     _platformLoading = active;
+    _loadedActivePlatform = false;
 
     // Warning! Tricky async code lies ahead.
     // (This should definitely be made less tricky)
@@ -1396,7 +1401,7 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      if (checkInterruption()) return platform;
+      _loadedActivePlatform = active;
 
       final audioSource = _audioSource;
       if (active && audioSource != null) {

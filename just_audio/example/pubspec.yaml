@@ -12,6 +12,11 @@ dependencies:
   rxdart: ^0.28.0
   just_audio_mpv: ^0.1.6
   just_audio_windows: ^0.2.0
+  http: ^1.2.2
+  crypto: ^3.0.5
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  logger_success: ^1.0.0+2
   # Other platform implementations below:
   # just_audio_libwinmedia: ^0.0.4
   just_audio:

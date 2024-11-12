@@ -770,9 +770,8 @@ class AudioPlayer {
     if (_active) {
       final initialSeekValues = _initialSeekValues;
       _initialSeekValues = null;
-      final activationNumber = _activationCount;
       final platform = await _platform; //Potential race condition here if load() is called multiple times while awaiting platform
-      return await _load(platform, _audioSource!, initialSeekValues: initialSeekValues, activationNumber: activationNumber);
+      return await _load(platform, _audioSource!, initialSeekValues: initialSeekValues);
     } else {
       // This will implicitly load the current audio source.
       return await _setPlatformActive(true);
@@ -799,20 +798,16 @@ class AudioPlayer {
     }
   }
 
-  Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, {_InitialSeekValues? initialSeekValues, int? activationNumber}) async {
+  Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, {_InitialSeekValues? initialSeekValues}) async {
+    final activationNumber = _activationCount;
     void checkInterruption() {
-      if (_activationCount != activationNumber) {
+      if (_activationCount != activationNumber || !identical(source, _audioSource)) {
         // the platform has changed since we started loading, so abort.
         throw PlatformException(code: 'abort', message: 'Loading interrupted');
       }
     }
 
-    if (activationNumber == null) {
-      activationNumber = _activationCount;
-    } else {
-      checkInterruption();
-    }
-
+    checkInterruption();
     try {
       await source.setup(this);
       checkInterruption();

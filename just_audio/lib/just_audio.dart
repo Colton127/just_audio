@@ -1234,7 +1234,7 @@ class AudioPlayer {
     // interrupted by another simultaneous call.
     final activationNumber = ++_activationCount;
 
-    final loadNumber = ++_loadCount;
+    final loadNumber = active ? ++_loadCount : -1;
 
     /// Tells whether we've been interrupted.
     bool wasInterrupted() => _activationCount != activationNumber;

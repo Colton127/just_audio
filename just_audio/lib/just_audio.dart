@@ -1218,6 +1218,7 @@ class AudioPlayer {
   Future<Duration?>? _setPlatformActive(bool active, {Completer<void>? playCompleter, bool force = false}) {
     if (_disposed) return null;
     if (!force && (active == _active)) return _durationFuture;
+    _active = active;
     _platformLoading = active;
 
     // Warning! Tricky async code lies ahead.
@@ -1232,6 +1233,8 @@ class AudioPlayer {
     // equal _activationCount for the duration of this call, unless it is
     // interrupted by another simultaneous call.
     final activationNumber = ++_activationCount;
+
+    final loadNumber = ++_loadCount;
 
     /// Tells whether we've been interrupted.
     bool wasInterrupted() => _activationCount != activationNumber;
@@ -1258,7 +1261,6 @@ class AudioPlayer {
 
     // This method updates _active and _platform before yielding to the next
     // task in the event loop.
-    _active = active;
     final position = this.position;
     final currentIndex = this.currentIndex;
 
@@ -1407,14 +1409,12 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      final audioSource = _audioSource;
-      if (active && audioSource != null) {
+      if (active && _audioSource != null && loadNumber == _loadCount) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;
-          final loadNumber = ++_loadCount;
 
-          final duration = await _load(platform, audioSource, loadNumber, initialSeekValues: initialSeekValues);
+          final duration = await _load(platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
           if (checkInterruption()) return platform;
           durationCompleter.complete(duration);
         } catch (e, stackTrace) {

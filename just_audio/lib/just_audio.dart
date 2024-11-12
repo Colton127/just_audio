@@ -1232,7 +1232,6 @@ class AudioPlayer {
     // equal _activationCount for the duration of this call, unless it is
     // interrupted by another simultaneous call.
     final activationNumber = ++_activationCount;
-    final loadNumber = ++_loadCount;
 
     /// Tells whether we've been interrupted.
     bool wasInterrupted() => _activationCount != activationNumber;
@@ -1409,10 +1408,12 @@ class AudioPlayer {
       subscribeToEvents(platform);
 
       final audioSource = _audioSource;
-      if (active && audioSource != null && loadNumber == _loadCount) {
+      if (active && audioSource != null) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;
+          final loadNumber = ++_loadCount;
+
           final duration = await _load(platform, audioSource, loadNumber, initialSeekValues: initialSeekValues);
           if (checkInterruption()) return platform;
           durationCompleter.complete(duration);

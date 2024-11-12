@@ -140,9 +140,6 @@ class AudioPlayer {
   bool _playInterrupted = false;
   bool _platformLoading = false;
 
-  ///If the platform is loading, but an audioSource hasn't been set yet
-  bool _loadedActivePlatform = false;
-
   AndroidAudioAttributes? _androidAudioAttributes;
   WebCrossOrigin? _webCrossOrigin;
   final bool _androidApplyAudioAttributes;
@@ -150,6 +147,9 @@ class AudioPlayer {
 
   /// Counts how many times [_setPlatformActive] is called.
   int _activationCount = 0;
+
+  /// Counts how many times [_load] is called.
+  int _loadCount = 0;
 
   /// Creates an [AudioPlayer].
   ///
@@ -771,11 +771,11 @@ class AudioPlayer {
     if (_audioSource == null) {
       throw Exception('Must set AudioSource before loading');
     }
-    if (_active && _loadedActivePlatform) {
+    if (_active) {
       final initialSeekValues = _initialSeekValues;
       _initialSeekValues = null;
-      final platform = await _platform; //Potential race condition here if _load() is called multiple times while awaiting platform
-      return await _load(platform, _audioSource!, initialSeekValues: initialSeekValues);
+      final loadNumber = ++_loadCount;
+      return await _load(await _platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
     } else {
       // This will implicitly load the current audio source.
       return await _setPlatformActive(true);
@@ -802,16 +802,15 @@ class AudioPlayer {
     }
   }
 
-  Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, {_InitialSeekValues? initialSeekValues}) async {
+  Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, int loadNumber, {_InitialSeekValues? initialSeekValues}) async {
     final activationNumber = _activationCount;
     void checkInterruption() {
-      if (_activationCount != activationNumber || !identical(source, _audioSource)) {
+      if (_activationCount != activationNumber || _loadCount != loadNumber) {
         // the platform has changed since we started loading, so abort.
         throw PlatformException(code: 'abort', message: 'Loading interrupted');
       }
     }
 
-    checkInterruption();
     try {
       await source.setup(this);
       checkInterruption();
@@ -877,7 +876,8 @@ class AudioPlayer {
                 start: start,
                 end: end,
                 tag: tag,
-              ));
+              ),
+        ++_loadCount);
     return duration;
   }
 
@@ -1212,7 +1212,6 @@ class AudioPlayer {
     if (_disposed) return null;
     if (!force && (active == _active)) return _durationFuture;
     _platformLoading = active;
-    _loadedActivePlatform = false;
 
     // Warning! Tricky async code lies ahead.
     // (This should definitely be made less tricky)
@@ -1226,6 +1225,7 @@ class AudioPlayer {
     // equal _activationCount for the duration of this call, unless it is
     // interrupted by another simultaneous call.
     final activationNumber = ++_activationCount;
+    final loadNumber = ++_loadCount;
 
     /// Tells whether we've been interrupted.
     bool wasInterrupted() => _activationCount != activationNumber;
@@ -1401,14 +1401,12 @@ class AudioPlayer {
 
       subscribeToEvents(platform);
 
-      _loadedActivePlatform = active;
-
       final audioSource = _audioSource;
-      if (active && audioSource != null) {
+      if (active && audioSource != null && loadNumber == _loadCount) {
         try {
           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
           _initialSeekValues = null;
-          final duration = await _load(platform, audioSource, initialSeekValues: initialSeekValues);
+          final duration = await _load(platform, audioSource, loadNumber, initialSeekValues: initialSeekValues);
           if (checkInterruption()) return platform;
           durationCompleter.complete(duration);
         } catch (e, stackTrace) {

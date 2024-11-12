@@ -73,24 +73,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }, onError: (Object e, StackTrace stackTrace) {
       print('playbackEventStream: A stream error occurred: $e');
     });
-
-    // Try to load audio from a source and catch any errors.
-    // try {
-    //   // AAC example: https://dl.espressif.com/dl/audio/ff-16b-2c-44100hz.aac
-    //   //  await _player.setAudioSource(AudioSource.uri(Uri.parse("https://cdn.coltongrubbs.com/audio/upbeat/upbeat.mp3")));
-    //   final cachingAudioSource = _cachingFileAudioSource('https://cdn.coltongrubbs.com/audio/music/psychedelic.mp3');
-    //   if (cachingAudioSource.cacheFile.existsSync()) {
-    //     cachingAudioSource.cacheFile.deleteSync();
-    //   }
-
-    //   await _player.setAudioSource(cachingAudioSource, preload: true);
-    // } on PlayerException catch (e) {
-    //   print("Error loading audio source: $e");
-    // }
   }
 
   final _k100MbMp3 = 'https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3';
-  // final k10MbMp3 = 'https://cdn.coltongrubbs.com/audio/music/psychedelic.mp3';
   final k10MbMp3 = 'http://192.168.1.8/audio/music/psychedelic.mp3';
 
   String? _loadedUrl;
@@ -110,13 +95,6 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
     }
     return;
-
-    await _player.stop();
-    const url = 'https://cdn.coltongrubbs.com/audio/music/psychedelic.mp3';
-    final audioSource = LockCachingAudioSource(Uri.parse(url));
-    await audioSource.clearCache();
-    final duration = await _player.setAudioSource(audioSource);
-    print('loadLockCacheAudioSource: Duration: $duration');
   }
 
   Future<AudioSource> _cachingFileAudioSource(String url) async {

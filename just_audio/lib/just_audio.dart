@@ -1418,8 +1418,12 @@ class AudioPlayer {
           if (checkInterruption()) return platform;
           durationCompleter.complete(duration);
         } catch (e, stackTrace) {
-          await _setPlatformActive(false)?.catchError((dynamic e) async => null);
-          durationCompleter.completeError(e, stackTrace);
+          if (loadNumber != _loadCount) {
+            durationCompleter.complete(null); // Another load request happened.
+          } else {
+            await _setPlatformActive(false)?.catchError((dynamic e) async => null);
+            durationCompleter.completeError(e, stackTrace);
+          }
         }
       } else {
         durationCompleter.complete(null);

@@ -513,10 +513,10 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             }
         } catch (IllegalStateException e) {
             e.printStackTrace();
-            result.error("Illegal state: " + e.getMessage(), null, null);
+            result.error("Illegal state: " + e.getMessage(), e.toString(), null);
         } catch (Exception e) {
             e.printStackTrace();
-            result.error("Error: " + e, null, null);
+            result.error("Error: " + e, e.toString(), null);
         } finally {
             broadcastPendingPlaybackEvent();
         }

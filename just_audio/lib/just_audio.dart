@@ -1194,6 +1194,8 @@ class AudioPlayer {
     _audioSource?.dispose();
     _audioSource = null;
     _proxy.stop();
+    await _playbackEventSubscription?.cancel();
+    await _playerDataSubscription?.cancel();
     await _durationSubject.close();
     await _loopModeSubject.close();
     await _shuffleModeEnabledSubject.close();

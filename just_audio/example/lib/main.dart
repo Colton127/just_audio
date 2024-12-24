@@ -143,6 +143,19 @@ class ControlButtons extends StatelessWidget {
           },
         ),
 
+        IconButton(
+          icon: const Icon(Icons.loop),
+          onPressed: () async {
+            final audioSource =
+                AudioSource.uri(Uri.parse("asset:///audio/nature.mp3"));
+            for (int i = 0; i < 100; i++) {
+              final player = AudioPlayer();
+              await player.setAudioSource(audioSource);
+              await player.dispose();
+            }
+          },
+        ),
+
         /// This StreamBuilder rebuilds whenever the player state changes, which
         /// includes the playing/paused state and also the
         /// loading/buffering/ready state. Depending on the state we show the

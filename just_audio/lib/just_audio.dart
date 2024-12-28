@@ -1282,8 +1282,8 @@ class AudioPlayer {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _playbackEventSubscription?.cancel();
-    await _playerDataSubscription?.cancel();
+    _playbackEventSubscription?.cancel();
+    _playerDataSubscription?.cancel();
 
     if (_nativePlatform != null) {
       await _disposePlatform(await _nativePlatform!);

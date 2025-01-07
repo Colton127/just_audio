@@ -1449,7 +1449,10 @@ class AudioPlayer {
           await _disposePlatform(oldPlatform);
         }
       }
-      if (_disposed) return _platform;
+      if (_disposed) {
+        throw (PlatformException(
+            code: 'abort', message: 'Player disposed during initialisation'));
+      }
       // During initialisation, we must only use this platform reference in case
       // _platform is updated again during initialisation.
       final platform = active
@@ -1567,6 +1570,10 @@ class AudioPlayer {
       return platform;
     }
 
+    if (_disposed) {
+      throw (PlatformException(
+          code: 'abort', message: 'Player disposed during initialisation'));
+    }
     _platform = setPlatform();
     return durationCompleter.future;
   }

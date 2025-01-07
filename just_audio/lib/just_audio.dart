@@ -1253,11 +1253,7 @@ class AudioPlayer {
     // We should call this after each awaited call since those are opportunities
     // for other coroutines to run and interrupt this one.
     bool checkInterruption() {
-      if (_disposed) {
-        final e = PlatformException(code: 'abort', message: 'Player disposed during initialisation');
-        durationCompleter.completeError(e);
-        throw e;
-      }
+      if (_disposed) return true;
       // No interruption.
       if (!wasInterrupted()) return false;
       // An interruption that we can ignore
@@ -1343,7 +1339,12 @@ class AudioPlayer {
           await _disposePlatform(oldPlatform);
         }
       }
-      checkInterruption();
+
+      if (_disposed) {
+        final e = PlatformException(code: 'abort', message: 'Player disposed during initialisation');
+        durationCompleter.completeError(e);
+        throw e;
+      }
 
       // During initialisation, we must only use this platform reference in case
       // _platform is updated again during initialisation.
@@ -1416,7 +1417,7 @@ class AudioPlayer {
           _sendPlayRequest(platform, playCompleter);
         }
       }
-
+      if (checkInterruption()) return platform;
       subscribeToEvents(platform);
 
       if (active && _audioSource != null && loadNumber == _loadCount) {

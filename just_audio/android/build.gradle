@@ -9,7 +9,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.3.0'
+        classpath 'com.android.tools.build:gradle:8.5.0'
     }
 }
 
@@ -39,7 +39,7 @@ android {
     }
 
     lintOptions {
-        disable 'InvalidPackage'
+        disable 'AndroidGradlePluginVersion', 'InvalidPackage', 'GradleDependency', 'NewerVersionAvailable'
     }
 
     compileOptions {
@@ -48,11 +48,10 @@ android {
     }
 
     dependencies {
-        def exoplayer_version = "2.18.7"
-        implementation "com.google.android.exoplayer:exoplayer-core:$exoplayer_version"
-        implementation "com.google.android.exoplayer:exoplayer-dash:$exoplayer_version"
-        implementation "com.google.android.exoplayer:exoplayer-hls:$exoplayer_version"
-        implementation "com.google.android.exoplayer:exoplayer-smoothstreaming:$exoplayer_version"
+        def exoplayer_version = "1.4.1"
+        implementation "androidx.media3:media3-exoplayer:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-dash:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-hls:$exoplayer_version"
+        implementation "androidx.media3:media3-exoplayer-smoothstreaming:$exoplayer_version"
     }
 }
-

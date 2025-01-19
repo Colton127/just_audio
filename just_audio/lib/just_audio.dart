@@ -1359,8 +1359,8 @@ class AudioPlayer {
               androidOffloadSchedulingEnabled: _androidOffloadSchedulingEnabled,
             )))
           : (_idlePlatform = _IdleAudioPlayer(id: _id, sequenceStream: sequenceStream));
-      if (checkInterruption()) return platform;
 
+      if (checkInterruption()) return platform;
       _platformValue = platform;
 
       if (active) {

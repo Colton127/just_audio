@@ -348,6 +348,11 @@ class AudioPlayer {
     }
   }
 
+  /// This is `true` when the audio player needs to engage the native platform
+  /// side of the plugin to decode or play audio, and is `false` when the native
+  /// resources are not needed (i.e. after initial instantiation and after [stop]).
+  bool get active => _active;
+
   /// The previously set [AudioSource], if any.
   AudioSource? get audioSource => _audioSource;
 
@@ -3381,6 +3386,7 @@ class _IdleAudioPlayer extends AudioPlayerPlatform {
   late Duration _position;
   int? _index;
   List<IndexedAudioSource>? _sequence;
+  late final StreamSubscription<List<IndexedAudioSource>?> _sequenceSubscription;
 
   /// Holds a pending request.
   SetAndroidAudioAttributesRequest? setAndroidAudioAttributesRequest;
@@ -3389,7 +3395,7 @@ class _IdleAudioPlayer extends AudioPlayerPlatform {
     required String id,
     required Stream<List<IndexedAudioSource>?> sequenceStream,
   }) : super(id) {
-    sequenceStream.listen((sequence) => _sequence = sequence);
+    _sequenceSubscription = sequenceStream.listen((sequence) => _sequence = sequence);
   }
 
   void _broadcastPlaybackEvent() {
@@ -3502,6 +3508,8 @@ class _IdleAudioPlayer extends AudioPlayerPlatform {
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
+    _sequenceSubscription.cancel();
+    _eventSubject.close();
     return DisposeResponse();
   }
 

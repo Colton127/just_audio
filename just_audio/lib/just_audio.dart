@@ -102,7 +102,7 @@ class AudioPlayer {
   StreamSubscription<void>? _interruptionEventSubscription;
 
   final String _id;
-  final _proxy = _ProxyHttpServer();
+  late final _proxy = _ProxyHttpServer();
   AudioSource? _audioSource;
   bool _disposed = false;
   _InitialSeekValues? _initialSeekValues;
@@ -847,7 +847,6 @@ class AudioPlayer {
       checkInterruption();
       return duration;
     } on PlatformException catch (e) {
-      _restartProxyServerOnError(e, source);
       try {
         throw PlayerException(int.parse(e.code), e.message, (e.details as Map<dynamic, dynamic>?)?.cast<String, dynamic>());
       } on FormatException catch (_) {
@@ -857,17 +856,6 @@ class AudioPlayer {
           throw PlayerException(9999999, e.message);
         }
       }
-    }
-  }
-
-  void _restartProxyServerOnError(PlatformException e, AudioSource source) async {
-    try {
-      if ((e.code == "-1004" || e.code == "-1005") && source is LockCachingAudioSource) {
-        await _proxy.stop(force: true);
-        await _proxy.start();
-      }
-    } catch (e) {
-      print('Error restarting proxy server: $e');
     }
   }
 
@@ -1215,6 +1203,7 @@ class AudioPlayer {
     await _androidAudioAttributesSubscription?.cancel();
     await _becomingNoisyEventSubscription?.cancel();
     await _interruptionEventSubscription?.cancel();
+    await _playbackEventSubject.close();
   }
 
   /// Switch to using the native platform when [active] is `true` and using the
@@ -1363,7 +1352,7 @@ class AudioPlayer {
                   (_isDarwin() || _isUnitTest()) ? _audioPipeline.darwinAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
               androidOffloadSchedulingEnabled: _androidOffloadSchedulingEnabled,
             )))
-          : (_idlePlatform = _IdleAudioPlayer(id: _id, sequenceStream: sequenceStream));
+          : (_idlePlatform ??= _IdleAudioPlayer(id: _id, sequenceStream: sequenceStream));
 
       if (checkInterruption()) return platform;
       _platformValue = platform;

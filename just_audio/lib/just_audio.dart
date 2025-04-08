@@ -1426,7 +1426,7 @@ class AudioPlayer {
           if (loadNumber != _loadCount) {
             durationCompleter.complete(null); // Another load request happened.
           } else {
-            await _setPlatformActive(false)?.catchError((dynamic e) async => null);
+            //await _setPlatformActive(false)?.catchError((dynamic e) async => null);
             durationCompleter.completeError(e, stackTrace);
           }
         }

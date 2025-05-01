@@ -66,7 +66,7 @@ class AudioPlayer {
   /// [_idlePlatform] otherwise.
   late Future<AudioPlayerPlatform> _platform;
 
-  /// Reflects the current platform immediately after it is set.
+  /// Reflects the current platform immediately after it is loaded. Null when loading.
   AudioPlayerPlatform? _platformValue;
 
   /// The interface to the native portion of the plugin. This will be disposed
@@ -94,6 +94,10 @@ class AudioPlayer {
   StreamSubscription<void>? _interruptionEventSubscription;
 
   final String _id;
+
+  /// When true, the native platform will be loaded when the player is created.
+  final bool initActive;
+
   AudioSource? _audioSource;
   bool _disposed = false;
   _InitialSeekValues? _initialSeekValues;
@@ -102,10 +106,11 @@ class AudioPlayer {
 
   PlaybackEvent _playbackEvent = PlaybackEvent();
   final _playbackEventSubject = BehaviorSubject<PlaybackEvent>(sync: true);
+  final _processingStateSubject = BehaviorSubject<ProcessingState>();
+
   Future<Duration?>? _durationFuture;
 
   final _durationSubject = BehaviorSubject<Duration?>();
-  final _processingStateSubject = BehaviorSubject<ProcessingState>();
   final _playingSubject = BehaviorSubject.seeded(false);
   final _volumeSubject = BehaviorSubject.seeded(1.0);
   final _speedSubject = BehaviorSubject.seeded(1.0);
@@ -170,6 +175,7 @@ class AudioPlayer {
     AudioPipeline? audioPipeline,
     bool androidOffloadSchedulingEnabled = false,
     bool useProxyForRequestHeaders = true,
+    this.initActive = false,
   })  : _id = _uuid.v4(),
         _androidApplyAudioAttributes = androidApplyAudioAttributes && _isAndroid(),
         _handleAudioSessionActivation = handleAudioSessionActivation,
@@ -181,10 +187,14 @@ class AudioPlayer {
       _automaticallyWaitsToMinimizeStalling = _audioLoadConfiguration!.darwinLoadControl!.automaticallyWaitsToMinimizeStalling;
     }
     _playbackEventSubject.add(_playbackEvent);
-    _processingStateSubject
-        .addStream(playbackEventStream.map((event) => event.processingState).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
 
-    _setPlatformActive(false, force: true)?.catchError((dynamic e) async => null);
+    _processingStateSubject
+        .addStream(playbackEventStream.map((event) => event.processingState).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}))
+        .whenComplete(() {
+      _processingStateSubject.close();
+    });
+
+    _setPlatformActive(initActive, force: true)?.ignore();
     // Respond to changes to AndroidAudioAttributes configuration.
     if (androidApplyAudioAttributes && _isAndroid()) {
       AudioSession.instance.then((audioSession) {
@@ -594,7 +604,7 @@ class AudioPlayer {
       final initialSeekValues = _initialSeekValues;
       _initialSeekValues = null;
       final loadNumber = ++_loadCount;
-      final platform = await _platform;
+      final platform = _platformValue ?? await _platform;
       //Potential race condition here if audioSource changes while awaiting platform.
       return await _load(platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
     } else {
@@ -716,11 +726,12 @@ class AudioPlayer {
           // NOTE: If a load() request happens simultaneously, this may result
           // in two play requests being sent. The platform implementation should
           // ignore the second play request since it is already playing.
-          _sendPlayRequest(await _platform, playCompleter);
+
+          _sendPlayRequest((_platformValue ?? await _platform), playCompleter);
         } else {
           // If the native platform wasn't already active, activating it will
           // implicitly restore the playing state and send a play request.
-          _setPlatformActive(true, playCompleter: playCompleter)?.catchError((dynamic e) async => null);
+          _setPlatformActive(true, playCompleter: playCompleter)?.ignore();
         }
       }
     } else {
@@ -746,7 +757,7 @@ class AudioPlayer {
     _playbackEventSubject.add(_playbackEvent);
     // TODO: perhaps modify platform side to ensure new state is broadcast
     // before this method returns.
-    await (await _platform).pause(PauseRequest());
+    await (_platformValue ?? await _platform).pause(PauseRequest());
   }
 
   Future<void> _sendPlayRequest(AudioPlayerPlatform platform, Completer<void>? playCompleter) async {
@@ -781,8 +792,7 @@ class AudioPlayer {
   Future<void> setVolume(final double volume) async {
     if (_disposed) return;
     _volumeSubject.add(volume);
-    final platform = _platformValue ?? await _platform;
-    await platform.setVolume(SetVolumeRequest(volume: volume));
+    await (_platformValue ?? await _platform).setVolume(SetVolumeRequest(volume: volume));
   }
 
   /// Sets the playback speed to use when [playing] is `true`, where 1.0 is
@@ -797,7 +807,7 @@ class AudioPlayer {
     );
     _playbackEventSubject.add(_playbackEvent);
     _speedSubject.add(speed);
-    await (await _platform).setSpeed(SetSpeedRequest(speed: speed));
+    await (_platformValue ?? await _platform).setSpeed(SetSpeedRequest(speed: speed));
   }
 
   /// Sets the factor by which pitch will be shifted.
@@ -809,7 +819,7 @@ class AudioPlayer {
     );
     _playbackEventSubject.add(_playbackEvent);
     _pitchSubject.add(pitch);
-    await (await _platform).setPitch(SetPitchRequest(pitch: pitch));
+    await (_platformValue ?? await _platform).setPitch(SetPitchRequest(pitch: pitch));
   }
 
   /// Sets the [LoopMode]. Looping will be gapless on Android, iOS and macOS. On
@@ -817,7 +827,7 @@ class AudioPlayer {
   Future<void> setLoopMode(LoopMode mode) async {
     if (_disposed) return;
     _loopModeSubject.add(mode);
-    await (await _platform).setLoopMode(SetLoopModeRequest(loopMode: LoopModeMessage.values[mode.index]));
+    await (_platformValue ?? await _platform).setLoopMode(SetLoopModeRequest(loopMode: LoopModeMessage.values[mode.index]));
   }
 
   /// Sets automaticallyWaitsToMinimizeStalling for AVPlayer in iOS 10.0 or later, defaults to true.
@@ -825,7 +835,7 @@ class AudioPlayer {
   Future<void> setAutomaticallyWaitsToMinimizeStalling(final bool automaticallyWaitsToMinimizeStalling) async {
     if (_disposed) return;
     _automaticallyWaitsToMinimizeStalling = automaticallyWaitsToMinimizeStalling;
-    await (await _platform)
+    await (_platformValue ?? await _platform)
         .setAutomaticallyWaitsToMinimizeStalling(SetAutomaticallyWaitsToMinimizeStallingRequest(enabled: automaticallyWaitsToMinimizeStalling));
   }
 
@@ -834,7 +844,7 @@ class AudioPlayer {
   Future<void> setCanUseNetworkResourcesForLiveStreamingWhilePaused(final bool canUseNetworkResourcesForLiveStreamingWhilePaused) async {
     if (_disposed) return;
     _canUseNetworkResourcesForLiveStreamingWhilePaused = canUseNetworkResourcesForLiveStreamingWhilePaused;
-    await (await _platform).setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    await (_platformValue ?? await _platform).setCanUseNetworkResourcesForLiveStreamingWhilePaused(
         SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest(enabled: canUseNetworkResourcesForLiveStreamingWhilePaused));
   }
 
@@ -842,14 +852,14 @@ class AudioPlayer {
   Future<void> setPreferredPeakBitRate(final double preferredPeakBitRate) async {
     if (_disposed) return;
     _preferredPeakBitRate = preferredPeakBitRate;
-    await (await _platform).setPreferredPeakBitRate(SetPreferredPeakBitRateRequest(bitRate: preferredPeakBitRate));
+    await (_platformValue ?? await _platform).setPreferredPeakBitRate(SetPreferredPeakBitRateRequest(bitRate: preferredPeakBitRate));
   }
 
   /// Sets allowsExternalPlayback on iOS/macOS, defaults to false.
   Future<void> setAllowsExternalPlayback(final bool allowsExternalPlayback) async {
     if (_disposed) return;
     _allowsExternalPlayback = allowsExternalPlayback;
-    await (await _platform).setAllowsExternalPlayback(SetAllowsExternalPlaybackRequest(allowsExternalPlayback: allowsExternalPlayback));
+    await (_platformValue ?? await _platform).setAllowsExternalPlayback(SetAllowsExternalPlaybackRequest(allowsExternalPlayback: allowsExternalPlayback));
   }
 
   /// Seeks to a particular [position]. If a composition of multiple
@@ -871,7 +881,7 @@ class AudioPlayer {
           updateTime: DateTime.now(),
         );
         _playbackEventSubject.add(_playbackEvent);
-        await (await _platform).seek(SeekRequest(position: position, index: index));
+        await (_platformValue ?? await _platform).seek(SeekRequest(position: position, index: index));
     }
   }
 
@@ -905,7 +915,7 @@ class AudioPlayer {
     if (_disposed) return;
     if (!kIsWeb && !_isUnitTest()) return;
 
-    await (await _platform).setWebCrossOrigin(
+    await (_platformValue ?? await _platform).setWebCrossOrigin(
       SetWebCrossOriginRequest(crossOrigin: webCrossOrigin == null ? null : WebCrossOriginMessage.values[webCrossOrigin.index]),
     );
     _webCrossOrigin = webCrossOrigin;
@@ -945,7 +955,6 @@ class AudioPlayer {
     await _speedSubject.close();
     await _pitchSubject.close();
     await _playbackEventSubject.close();
-    await _processingStateSubject.close();
   }
 
   /// Switch to using the native platform when [active] is `true` and using the
@@ -1056,13 +1065,11 @@ class AudioPlayer {
     Future<AudioPlayerPlatform> setPlatform() async {
       _playbackEventSubscription?.cancel();
       _playerDataSubscription?.cancel();
-      if (!force) {
-        final oldPlatform = _platformValue;
-        if (oldPlatform != null && oldPlatform is! _IdleAudioPlayer) {
-          await _disposePlatform(oldPlatform);
-        }
-        _platformValue = null;
+      final oldPlatform = _platformValue;
+      if (oldPlatform != null && oldPlatform is! _IdleAudioPlayer) {
+        await _disposePlatform(oldPlatform); // Dispose of the old platform.
       }
+      _platformValue = null; // Reset the platform value to null while we wait for the new one.
 
       if (_disposed) {
         final e = PlatformException(code: 'abort', message: 'Player disposed during initialisation');
@@ -1168,6 +1175,7 @@ class AudioPlayer {
   /// Dispose of the given platform.
   Future<void> _disposePlatform(AudioPlayerPlatform platform) async {
     if (platform is _IdleAudioPlayer) {
+      _idlePlatform = null;
       await platform.dispose(DisposeRequest());
     } else {
       _nativePlatform = null;
@@ -3262,31 +3270,4 @@ enum PositionDiscontinuityReason {
   /// The position discontinuity occurred because the player reached the end of
   /// the current item and auto-advanced to the next item.
   autoAdvance,
-}
-
-Future<HttpClientRequest> _getUrl(HttpClient client, Uri uri, {Map<String, String>? headers}) async {
-  final request = await client.getUrl(uri);
-  if (headers != null) {
-    final host = request.headers.value(HttpHeaders.hostHeader);
-    request.headers.clear();
-    request.headers.set(HttpHeaders.contentLengthHeader, '0');
-    headers.forEach((name, value) => request.headers.set(name, value));
-    if (host != null) {
-      request.headers.set(HttpHeaders.hostHeader, host);
-    }
-    if (client.userAgent != null) {
-      request.headers.set(HttpHeaders.userAgentHeader, client.userAgent!);
-    }
-  }
-  // Match ExoPlayer's native behavior
-  request.maxRedirects = 20;
-  return request;
-}
-
-HttpClient _createHttpClient({String? userAgent}) {
-  final client = HttpClient();
-  if (userAgent != null) {
-    client.userAgent = userAgent;
-  }
-  return client;
 }

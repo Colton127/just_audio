@@ -112,24 +112,14 @@
 //   PlaybackEvent _playbackEvent = PlaybackEvent();
 //   final _playbackEventSubject = BehaviorSubject<PlaybackEvent>(sync: true);
 //   Future<Duration?>? _durationFuture;
+
 //   final _durationSubject = BehaviorSubject<Duration?>();
 //   final _processingStateSubject = BehaviorSubject<ProcessingState>();
 //   final _playingSubject = BehaviorSubject.seeded(false);
 //   final _volumeSubject = BehaviorSubject.seeded(1.0);
 //   final _speedSubject = BehaviorSubject.seeded(1.0);
 //   final _pitchSubject = BehaviorSubject.seeded(1.0);
-//   final _skipSilenceEnabledSubject = BehaviorSubject.seeded(false);
-//   final _bufferedPositionSubject = BehaviorSubject<Duration>();
-//   final _icyMetadataSubject = BehaviorSubject<IcyMetadata?>();
-//   final _playerStateSubject = BehaviorSubject<PlayerState>();
-//   final _sequenceSubject = BehaviorSubject<List<IndexedAudioSource>?>();
-//   final _shuffleIndicesSubject = BehaviorSubject<List<int>?>();
-//   final _shuffleIndicesInv = <int>[];
-//   final _currentIndexSubject = BehaviorSubject<int?>(sync: true);
-//   final _sequenceStateSubject = BehaviorSubject<SequenceState?>();
 //   final _loopModeSubject = BehaviorSubject.seeded(LoopMode.off);
-//   final _shuffleModeEnabledSubject = BehaviorSubject.seeded(false);
-//   final _androidAudioSessionIdSubject = BehaviorSubject<int?>();
 //   final _positionDiscontinuitySubject = PublishSubject<PositionDiscontinuity>(sync: true);
 //   var _seeking = false;
 //   bool _automaticallyWaitsToMinimizeStalling = true;
@@ -206,10 +196,6 @@
 //     _playbackEventSubject.add(_playbackEvent);
 //     _processingStateSubject
 //         .addStream(playbackEventStream.map((event) => event.processingState).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _bufferedPositionSubject
-//         .addStream(playbackEventStream.map((event) => event.bufferedPosition).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _icyMetadataSubject
-//         .addStream(playbackEventStream.map((event) => event.icyMetadata).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
 //     playbackEventStream.pairwise().listen((pair) {
 //       final prev = pair.first;
 //       final curr = pair.last;
@@ -235,38 +221,8 @@
 //         _positionDiscontinuitySubject.add(PositionDiscontinuity(PositionDiscontinuityReason.autoAdvance, prev, curr));
 //       }
 //     }, onError: (Object e, StackTrace st) {});
-//     _currentIndexSubject
-//         .addStream(playbackEventStream.map((event) => event.currentIndex).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _androidAudioSessionIdSubject
-//         .addStream(playbackEventStream.map((event) => event.androidAudioSessionId).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _sequenceStateSubject.addStream(Rx.combineLatest5<List<IndexedAudioSource>?, List<int>?, int?, bool, LoopMode, SequenceState?>(
-//       sequenceStream,
-//       shuffleIndicesStream,
-//       currentIndexStream,
-//       shuffleModeEnabledStream,
-//       loopModeStream,
-//       (sequence, shuffleIndices, currentIndex, shuffleModeEnabled, loopMode) {
-//         if (sequence == null) return null;
-//         if (shuffleIndices == null) return null;
-//         currentIndex ??= 0;
-//         currentIndex = max(min(sequence.length - 1, max(0, currentIndex)), 0);
-//         return SequenceState(
-//           sequence,
-//           currentIndex,
-//           shuffleIndices,
-//           shuffleModeEnabled,
-//           loopMode,
-//         );
-//       },
-//     ).distinct().handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _playerStateSubject.addStream(
-//         Rx.combineLatest2<bool, PlaybackEvent, PlayerState>(playingStream, playbackEventStream, (playing, event) => PlayerState(playing, event.processingState))
-//             .distinct()
-//             .handleError((Object err, StackTrace stackTrace) {/* noop */}));
-//     _shuffleModeEnabledSubject.add(false);
-//     _loopModeSubject.add(LoopMode.off);
+
 //     _setPlatformActive(false, force: true)?.catchError((dynamic e) async => null);
-//     _sequenceSubject.add(null);
 //     // Respond to changes to AndroidAudioAttributes configuration.
 //     if (androidApplyAudioAttributes && _isAndroid()) {
 //       AudioSession.instance.then((audioSession) {
@@ -403,113 +359,15 @@
 //   /// A stream of current pitch factor values.
 //   Stream<double> get pitchStream => _pitchSubject.stream;
 
-//   /// The current skipSilenceEnabled factor of the player.
-//   bool get skipSilenceEnabled => _skipSilenceEnabledSubject.nvalue!;
-
-//   /// A stream of current skipSilenceEnabled factor values.
-//   Stream<bool> get skipSilenceEnabledStream => _skipSilenceEnabledSubject.stream;
-
 //   /// The current [AudioPipeline]
 //   AudioPipeline get audioPipeline => _audioPipeline;
 
 //   /// The position up to which buffered audio is available.
-//   Duration get bufferedPosition => _bufferedPositionSubject.nvalue ?? Duration.zero;
-
-//   /// A stream of buffered positions.
-//   Stream<Duration> get bufferedPositionStream => _bufferedPositionSubject.stream;
+//   Duration get bufferedPosition => _playbackEvent.bufferedPosition;
 
 //   /// The latest ICY metadata received through the audio source, or `null` if no
 //   /// metadata is available.
 //   IcyMetadata? get icyMetadata => _playbackEvent.icyMetadata;
-
-//   /// A stream of ICY metadata received through the audio source.
-//   Stream<IcyMetadata?> get icyMetadataStream => _icyMetadataSubject.stream;
-
-//   /// The current player state containing only the processing and playing
-//   /// states.
-//   PlayerState get playerState => _playerStateSubject.nvalue ?? PlayerState(false, ProcessingState.idle);
-
-//   /// A stream of [PlayerState]s.
-//   Stream<PlayerState> get playerStateStream => _playerStateSubject.stream;
-
-//   /// The current sequence of indexed audio sources, or `null` if no audio
-//   /// source is set.
-//   List<IndexedAudioSource>? get sequence => _sequenceSubject.nvalue;
-
-//   /// A stream broadcasting the current sequence of indexed audio sources.
-//   Stream<List<IndexedAudioSource>?> get sequenceStream => _sequenceSubject.stream;
-
-//   /// The current shuffled sequence of indexed audio sources, or `null` if no
-//   /// audio source is set.
-//   List<int>? get shuffleIndices => _shuffleIndicesSubject.nvalue;
-
-//   /// A stream broadcasting the current shuffled sequence of indexed audio
-//   /// sources.
-//   Stream<List<int>?> get shuffleIndicesStream => _shuffleIndicesSubject.stream;
-
-//   //List<IndexedAudioSource> get _effectiveSequence =>
-//   //    shuffleModeEnabled ? shuffleIndices : sequence;
-
-//   /// The index of the current item, or `null` if either no audio source is set,
-//   /// or the current audio source has an empty sequence.
-//   int? get currentIndex => _currentIndexSubject.nvalue;
-
-//   /// A stream broadcasting the current item.
-//   Stream<int?> get currentIndexStream => _currentIndexSubject.stream;
-
-//   /// The current [SequenceState], or `null` if either [sequence]] or
-//   /// [currentIndex] is `null`.
-//   SequenceState? get sequenceState => _sequenceStateSubject.nvalue;
-
-//   /// A stream broadcasting the current [SequenceState].
-//   Stream<SequenceState?> get sequenceStateStream => _sequenceStateSubject.stream;
-
-//   /// Whether there is another item after the current index.
-//   bool get hasNext => nextIndex != null;
-
-//   /// Whether there is another item before the current index.
-//   bool get hasPrevious => previousIndex != null;
-
-//   /// Returns [shuffleIndices] if [shuffleModeEnabled] is `true`, otherwise
-//   /// returns the unshuffled indices. When no current audio source is set, this
-//   /// returns `null`.
-//   List<int>? get effectiveIndices {
-//     if (shuffleIndices == null || sequence == null) return null;
-//     return shuffleModeEnabled ? shuffleIndices : List.generate(sequence!.length, (i) => i);
-//   }
-
-//   List<int>? get _effectiveIndicesInv {
-//     if (shuffleIndices == null || sequence == null) return null;
-//     return shuffleModeEnabled ? _shuffleIndicesInv : List.generate(sequence!.length, (i) => i);
-//   }
-
-//   /// The index of the next item to be played, or `null` if there is no next
-//   /// item.
-//   int? get nextIndex => _getRelativeIndex(1);
-
-//   /// The index of the previous item in play order, or `null` if there is no
-//   /// previous item.
-//   int? get previousIndex => _getRelativeIndex(-1);
-
-//   int? _getRelativeIndex(int offset) {
-//     if (_audioSource == null || currentIndex == null) return null;
-//     if (loopMode == LoopMode.one) return currentIndex;
-//     final effectiveIndices = this.effectiveIndices;
-//     if (effectiveIndices == null || effectiveIndices.isEmpty) return null;
-//     final effectiveIndicesInv = _effectiveIndicesInv!;
-//     if (currentIndex! >= effectiveIndicesInv.length) return null;
-//     final invPos = effectiveIndicesInv[currentIndex!];
-//     var newInvPos = invPos + offset;
-//     if (newInvPos >= effectiveIndices.length || newInvPos < 0) {
-//       if (loopMode == LoopMode.all) {
-//         newInvPos %= effectiveIndices.length;
-//       } else {
-//         return null;
-//       }
-//     }
-//     final result = effectiveIndices[newInvPos];
-//     return result;
-//   }
 
 //   /// The current loop mode.
 //   LoopMode get loopMode => _loopModeSubject.nvalue!;
@@ -517,17 +375,8 @@
 //   /// A stream of [LoopMode]s.
 //   Stream<LoopMode> get loopModeStream => _loopModeSubject.stream;
 
-//   /// Whether shuffle mode is currently enabled.
-//   bool get shuffleModeEnabled => _shuffleModeEnabledSubject.nvalue!;
-
-//   /// A stream of the shuffle mode status.
-//   Stream<bool> get shuffleModeEnabledStream => _shuffleModeEnabledSubject.stream;
-
 //   /// The current Android AudioSession ID or `null` if not set.
 //   int? get androidAudioSessionId => _playbackEvent.androidAudioSessionId;
-
-//   /// Broadcasts the current Android AudioSession ID or `null` if not set.
-//   Stream<int?> get androidAudioSessionIdStream => _androidAudioSessionIdSubject.stream;
 
 //   /// A stream broadcasting every position discontinuity.
 //   Stream<PositionDiscontinuity> get positionDiscontinuityStream => _positionDiscontinuitySubject.stream;
@@ -764,7 +613,6 @@
 //     _audioSource = source;
 //     _initialSeekValues = _InitialSeekValues(position: initialPosition, index: initialIndex);
 //     _playbackEventSubject.add(_playbackEvent = PlaybackEvent(currentIndex: initialIndex ?? 0, updatePosition: initialPosition ?? Duration.zero));
-//     _broadcastSequence();
 //     Duration? duration;
 //     if (playing) preload = true;
 //     if (preload) {
@@ -803,26 +651,6 @@
 //     }
 //   }
 
-//   void _broadcastSequence() {
-//     // TODO: update currentIndex first if it's out of range as a result of
-//     // removing items from the playlist.
-//     _sequenceSubject.add(_audioSource?.sequence);
-//     _updateShuffleIndices();
-//   }
-
-//   void _updateShuffleIndices() {
-//     _shuffleIndicesSubject.add(_audioSource?.shuffleIndices);
-//     final shuffleIndicesLength = shuffleIndices?.length ?? 0;
-//     if (_shuffleIndicesInv.length > shuffleIndicesLength) {
-//       _shuffleIndicesInv.removeRange(shuffleIndicesLength, _shuffleIndicesInv.length);
-//     } else if (_shuffleIndicesInv.length < shuffleIndicesLength) {
-//       _shuffleIndicesInv.addAll(List.filled(shuffleIndicesLength - _shuffleIndicesInv.length, 0));
-//     }
-//     for (var i = 0; i < shuffleIndicesLength; i++) {
-//       _shuffleIndicesInv[shuffleIndices![i]] = i;
-//     }
-//   }
-
 //   Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, int loadNumber, {_InitialSeekValues? initialSeekValues}) async {
 //     final activationNumber = _activationCount;
 //     void checkInterruption() {
@@ -841,7 +669,6 @@
 //       await source.setup(this);
 //       checkInterruption();
 //       source._shuffle(initialIndex: initialSeekValues?.index ?? 0);
-//       _broadcastSequence();
 //       _durationFuture = platform
 //           .load(LoadRequest(
 //             audioSourceMessage: source._toMessage(),
@@ -1007,21 +834,6 @@
 //     await platform.setVolume(SetVolumeRequest(volume: volume));
 //   }
 
-//   /// Sets whether silence should be skipped in audio playback. (Currently
-//   /// Android only).
-//   Future<void> setSkipSilenceEnabled(bool enabled) async {
-//     if (_disposed) return;
-//     final previouslyEnabled = skipSilenceEnabled;
-//     if (enabled == previouslyEnabled) return;
-//     _skipSilenceEnabledSubject.add(enabled);
-//     try {
-//       await (await _platform).setSkipSilence(SetSkipSilenceRequest(enabled: enabled));
-//     } catch (e) {
-//       _skipSilenceEnabledSubject.add(previouslyEnabled);
-//       rethrow;
-//     }
-//   }
-
 //   /// Sets the playback speed to use when [playing] is `true`, where 1.0 is
 //   /// normal speed. Note that values in excess of 1.0 may result in stalls if
 //   /// the playback speed is faster than the player is able to downloaded the
@@ -1055,24 +867,6 @@
 //     if (_disposed) return;
 //     _loopModeSubject.add(mode);
 //     await (await _platform).setLoopMode(SetLoopModeRequest(loopMode: LoopModeMessage.values[mode.index]));
-//   }
-
-//   /// Sets whether shuffle mode is enabled.
-//   Future<void> setShuffleModeEnabled(bool enabled) async {
-//     if (_disposed) return;
-//     _shuffleModeEnabledSubject.add(enabled);
-//     await (await _platform).setShuffleMode(SetShuffleModeRequest(shuffleMode: enabled ? ShuffleModeMessage.all : ShuffleModeMessage.none));
-//   }
-
-//   /// Recursively shuffles the children of the currently loaded [AudioSource].
-//   /// Each [ConcatenatingAudioSource] will be shuffled according to its
-//   /// configured [ShuffleOrder].
-//   Future<void> shuffle() async {
-//     if (_disposed) return;
-//     if (_audioSource == null) return;
-//     _audioSource!._shuffle(initialIndex: currentIndex);
-//     _updateShuffleIndices();
-//     await (await _platform).setShuffleOrder(SetShuffleOrderRequest(audioSourceMessage: _audioSource!._toMessage()));
 //   }
 
 //   /// Sets automaticallyWaitsToMinimizeStalling for AVPlayer in iOS 10.0 or later, defaults to true.
@@ -1133,20 +927,6 @@
 //         } finally {
 //           _seeking = false;
 //         }
-//     }
-//   }
-
-//   /// Seek to the next item, or does nothing if there is no next item.
-//   Future<void> seekToNext() async {
-//     if (hasNext) {
-//       await seek(Duration.zero, index: nextIndex);
-//     }
-//   }
-
-//   /// Seek to the previous item, or does nothing if there is no previous item.
-//   Future<void> seekToPrevious() async {
-//     if (hasPrevious) {
-//       await seek(Duration.zero, index: previousIndex);
 //     }
 //   }
 
@@ -1216,22 +996,12 @@
 //     }
 //     await _durationSubject.close();
 //     await _loopModeSubject.close();
-//     await _shuffleModeEnabledSubject.close();
 //     await _playingSubject.close();
 //     await _volumeSubject.close();
 //     await _speedSubject.close();
 //     await _pitchSubject.close();
-//     await _sequenceSubject.close();
-//     await _shuffleIndicesSubject.close();
 //     await _playbackEventSubject.close();
-//     await _playerStateSubject.close();
 //     await _processingStateSubject.close();
-//     await _skipSilenceEnabledSubject.close();
-//     await _bufferedPositionSubject.close();
-//     await _icyMetadataSubject.close();
-//     await _currentIndexSubject.close();
-//     await _sequenceStateSubject.close();
-//     await _androidAudioSessionIdSubject.close();
 //     await _positionDiscontinuitySubject.close();
 //   }
 
@@ -1290,7 +1060,6 @@
 //     // This method updates _active and _platform before yielding to the next
 //     // task in the event loop.
 //     final position = this.position;
-//     final currentIndex = this.currentIndex;
 
 //     void subscribeToEvents(AudioPlayerPlatform platform) {
 //       _playerDataSubscription = platform.playerDataMessageStream.listen((message) {
@@ -1309,20 +1078,9 @@
 //         if (message.loopMode != null) {
 //           _loopModeSubject.add(LoopMode.values[message.loopMode!.index]);
 //         }
-//         if (message.shuffleMode != null) {
-//           _shuffleModeEnabledSubject.add(message.shuffleMode != ShuffleModeMessage.none);
-//         }
 //       });
 //       _playbackEventSubscription = platform.playbackEventMessageStream.listen((message) {
 //         var duration = message.duration;
-//         var index = message.currentIndex ?? currentIndex;
-//         if (index != null && sequence != null && index < sequence!.length) {
-//           if (duration == null) {
-//             duration = sequence![index].duration;
-//           } else {
-//             sequence![index].duration = duration;
-//           }
-//         }
 //         if (_platformLoading && message.processingState != ProcessingStateMessage.idle) {
 //           _platformLoading = false;
 //         }
@@ -1335,7 +1093,7 @@
 //           bufferedPosition: message.bufferedPosition,
 //           duration: duration,
 //           icyMetadata: message.icyMetadata == null ? null : IcyMetadata._fromMessage(message.icyMetadata!),
-//           currentIndex: index,
+//           currentIndex: null,
 //           androidAudioSessionId: message.androidAudioSessionId,
 //         );
 //         _durationFuture = Future.value(playbackEvent.duration);
@@ -1382,7 +1140,7 @@
 //                   (_isDarwin() || _isUnitTest()) ? _audioPipeline.darwinAudioEffects.map((audioEffect) => audioEffect._toMessage()).toList() : [],
 //               androidOffloadSchedulingEnabled: _androidOffloadSchedulingEnabled,
 //             )))
-//           : (_idlePlatform ??= _IdleAudioPlayer(id: _id, sequenceStream: sequenceStream));
+//           : (_idlePlatform ??= _IdleAudioPlayer(id: _id));
 
 //       if (checkInterruption()) return platform;
 //       _platformValue = platform;
@@ -1412,21 +1170,15 @@
 //         if (checkInterruption()) return platform;
 //         await platform.setSpeed(SetSpeedRequest(speed: speed));
 //         if (checkInterruption()) return platform;
-//         try {
-//           await platform.setPitch(SetPitchRequest(pitch: pitch));
-//         } catch (e) {
-//           // setPitch not supported on this platform.
+//         if (!Platform.isIOS) {
+//           try {
+//             await platform.setPitch(SetPitchRequest(pitch: pitch));
+//           } catch (e) {
+//             // setPitch not supported on this platform.
+//           }
+//           if (checkInterruption()) return platform;
 //         }
-//         if (checkInterruption()) return platform;
-//         try {
-//           await platform.setSkipSilence(SetSkipSilenceRequest(enabled: skipSilenceEnabled));
-//         } catch (e) {
-//           // setSkipSilence not supported on this platform.
-//         }
-//         if (checkInterruption()) return platform;
 //         await platform.setLoopMode(SetLoopModeRequest(loopMode: LoopModeMessage.values[loopMode.index]));
-//         if (checkInterruption()) return platform;
-//         await platform.setShuffleMode(SetShuffleModeRequest(shuffleMode: shuffleModeEnabled ? ShuffleModeMessage.all : ShuffleModeMessage.none));
 //         if (checkInterruption()) return platform;
 //         if (kIsWeb && _webCrossOrigin != null) {
 //           await platform.setWebCrossOrigin(SetWebCrossOriginRequest(
@@ -1446,7 +1198,7 @@
 
 //       if (active && _audioSource != null && loadNumber == _loadCount) {
 //         try {
-//           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: currentIndex);
+//           final initialSeekValues = _initialSeekValues ?? _InitialSeekValues(position: position, index: null);
 //           _initialSeekValues = null;
 
 //           final duration = await _load(platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
@@ -2483,108 +2235,6 @@
 //     _shuffleOrder.shuffle(initialIndex: localInitialIndex);
 //   }
 
-//   /// (Untested) Appends an [AudioSource].
-//   Future<void> add(AudioSource audioSource) async {
-//     final index = children.length;
-//     children.add(audioSource);
-//     _shuffleOrder.insert(index, 1);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await audioSource.setup(_player!);
-//       await (await _player!._platform).concatenatingInsertAll(
-//           ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Inserts an [AudioSource] at [index].
-//   Future<void> insert(int index, AudioSource audioSource) async {
-//     children.insert(index, audioSource);
-//     _shuffleOrder.insert(index, 1);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await audioSource.setup(_player!);
-//       await (await _player!._platform).concatenatingInsertAll(
-//           ConcatenatingInsertAllRequest(id: _id, index: index, children: [audioSource._toMessage()], shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Appends multiple [AudioSource]s.
-//   Future<void> addAll(List<AudioSource> children) async {
-//     final index = this.children.length;
-//     this.children.addAll(children);
-//     _shuffleOrder.insert(index, children.length);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       for (var child in children) {
-//         await child.setup(_player!);
-//       }
-//       await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
-//           id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Insert multiple [AudioSource]s at [index].
-//   Future<void> insertAll(int index, List<AudioSource> children) async {
-//     this.children.insertAll(index, children);
-//     _shuffleOrder.insert(index, children.length);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       for (var child in children) {
-//         await child.setup(_player!);
-//       }
-//       await (await _player!._platform).concatenatingInsertAll(ConcatenatingInsertAllRequest(
-//           id: _id, index: index, children: children.map((child) => child._toMessage()).toList(), shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Dynamically remove an [AudioSource] at [index] after this
-//   /// [ConcatenatingAudioSource] has already been loaded.
-//   Future<void> removeAt(int index) async {
-//     children.removeAt(index);
-//     _shuffleOrder.removeRange(index, index + 1);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await (await _player!._platform).concatenatingRemoveRange(
-//           ConcatenatingRemoveRangeRequest(id: _id, startIndex: index, endIndex: index + 1, shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Removes a range of [AudioSource]s from index [start] inclusive
-//   /// to [end] exclusive.
-//   Future<void> removeRange(int start, int end) async {
-//     children.removeRange(start, end);
-//     _shuffleOrder.removeRange(start, end);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await (await _player!._platform)
-//           .concatenatingRemoveRange(ConcatenatingRemoveRangeRequest(id: _id, startIndex: start, endIndex: end, shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Moves an [AudioSource] from [currentIndex] to [newIndex].
-//   Future<void> move(int currentIndex, int newIndex) async {
-//     children.insert(newIndex, children.removeAt(currentIndex));
-//     _shuffleOrder.removeRange(currentIndex, currentIndex + 1);
-//     _shuffleOrder.insert(newIndex, 1);
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await (await _player!._platform)
-//           .concatenatingMove(ConcatenatingMoveRequest(id: _id, currentIndex: currentIndex, newIndex: newIndex, shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
-//   /// (Untested) Removes all [AudioSource]s.
-//   Future<void> clear() async {
-//     final end = children.length;
-//     children.clear();
-//     _shuffleOrder.clear();
-//     if (_player != null) {
-//       _player!._broadcastSequence();
-//       await (await _player!._platform)
-//           .concatenatingRemoveRange(ConcatenatingRemoveRangeRequest(id: _id, startIndex: 0, endIndex: end, shuffleOrder: List.of(_shuffleOrder.indices)));
-//     }
-//   }
-
 //   /// The number of [AudioSource]s.
 //   int get length => children.length;
 
@@ -3404,18 +3054,13 @@
 //   final _eventSubject = BehaviorSubject<PlaybackEventMessage>();
 //   late Duration _position;
 //   int? _index;
-//   List<IndexedAudioSource>? _sequence;
-//   late final StreamSubscription<List<IndexedAudioSource>?> _sequenceSubscription;
 
 //   /// Holds a pending request.
 //   SetAndroidAudioAttributesRequest? setAndroidAudioAttributesRequest;
 
 //   _IdleAudioPlayer({
 //     required String id,
-//     required Stream<List<IndexedAudioSource>?> sequenceStream,
-//   }) : super(id) {
-//     _sequenceSubscription = sequenceStream.listen((sequence) => _sequence = sequence);
-//   }
+//   }) : super(id);
 
 //   void _broadcastPlaybackEvent() {
 //     var updateTime = DateTime.now();
@@ -3425,13 +3070,11 @@
 //       updateTime: updateTime,
 //       bufferedPosition: Duration.zero,
 //       icyMetadata: null,
-//       duration: _getDurationAtIndex(_index),
+//       duration: null,
 //       currentIndex: _index,
 //       androidAudioSessionId: null,
 //     ));
 //   }
-
-//   Duration? _getDurationAtIndex(int? index) => index != null && _sequence != null && index < _sequence!.length ? _sequence![index].duration : null;
 
 //   @override
 //   Stream<PlaybackEventMessage> get playbackEventMessageStream => _eventSubject.stream;
@@ -3441,7 +3084,7 @@
 //     _index = request.initialIndex ?? 0;
 //     _position = request.initialPosition ?? Duration.zero;
 //     _broadcastPlaybackEvent();
-//     return LoadResponse(duration: _getDurationAtIndex(_index));
+//     return LoadResponse(duration: null);
 //   }
 
 //   @override
@@ -3527,7 +3170,6 @@
 
 //   @override
 //   Future<DisposeResponse> dispose(DisposeRequest request) async {
-//     _sequenceSubscription.cancel();
 //     _eventSubject.close();
 //     return DisposeResponse();
 //   }

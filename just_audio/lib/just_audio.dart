@@ -645,7 +645,13 @@ class AudioPlayer {
         throw PlatformException(code: 'abort', message: 'Loading interrupted (PlatformValue updated)');
       }
       // Wait for loading state to pass.
-      await processingStateStream.firstWhere((state) => state != ProcessingState.loading);
+
+      // If no such element is found before this stream is done, and an [orElse] function is provided, the result of calling [orElse] becomes the value of the future. If [orElse] throws, the returned future is completed with that error.
+
+      await processingStateStream.firstWhere((state) => state != ProcessingState.loading, orElse: () {
+        // If the stream is closed, we can assume that the player has been disposed of.
+        throw PlatformException(code: 'abort', message: 'Loading interrupted (Player disposed)');
+      });
       checkInterruption();
       return duration;
     } on PlatformException catch (e) {

@@ -104,6 +104,13 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     private Integer audioSessionId;
     private MediaSource mediaSource;
     private Integer currentIndex;
+
+    private List<Double> activeFadeVolumes;
+    private long activeFadeIntervalMs;
+    private int activeFadeCurrentIndex;
+
+    private Result activeFadeResult;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable bufferWatcher = new Runnable() {
         @Override
@@ -133,6 +140,29 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             }
         }
     };
+    private final Runnable fadeVolumeRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (player == null || activeFadeVolumes == null || activeFadeCurrentIndex >= activeFadeVolumes.size() || activeFadeCurrentIndex < 0) {
+                cancelVolumeFade(); // Stop if player is gone, fade is cancelled, or index is out of bounds
+                return;
+            }
+
+
+            double targetVolume = activeFadeVolumes.get(activeFadeCurrentIndex);
+            player.setVolume((float)targetVolume);
+            activeFadeCurrentIndex++;
+
+            if (activeFadeCurrentIndex < activeFadeVolumes.size()) {
+                handler.postDelayed(this, activeFadeIntervalMs);
+            } else {
+                cancelVolumeFade(); // Fade completed
+            }
+        }
+    };
+
+
+
 
     public AudioPlayer(
         final Context applicationContext,
@@ -182,6 +212,49 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         }
     }
 
+    private void fadeVolume(Number intervalMsNumber, List<Double> volumes, Result result) {
+        cancelVolumeFade(); // Cancel any ongoing fade
+        if (player == null) {
+            result.error("player_not_initialized", "Player is not initialized.", null);
+            return;
+        }
+
+        if (volumes == null || volumes.isEmpty()) {
+            result.success(new HashMap<String, Object>()); // No volumes to fade
+            return;
+        }
+        long intervalMs = intervalMsNumber.longValue();
+        if (intervalMs <= 0) {
+            // If interval is invalid, just set to the last volume instantly
+            player.setVolume(volumes.get(volumes.size() - 1).floatValue());
+            result.success(new HashMap<String, Object>());
+            return;
+        }
+
+        this.activeFadeResult = result;
+        this.activeFadeVolumes = new ArrayList<>(volumes); // Make a copy
+        this.activeFadeIntervalMs = intervalMs;
+        this.activeFadeCurrentIndex = 0;
+
+        // Start the fade by posting the runnable
+        handler.post(fadeVolumeRunnable);
+    }
+
+
+    private void cancelVolumeFade() {
+        if (activeFadeVolumes != null) {
+            activeFadeVolumes = null;
+            handler.removeCallbacks(fadeVolumeRunnable);
+            activeFadeCurrentIndex = 0;
+            activeFadeIntervalMs = 0;
+            if (this.activeFadeResult != null) {
+                this.activeFadeResult.success(new HashMap<String, Object>());
+                this.activeFadeResult = null;
+            }
+        }
+    }
+
+
     private void startWatchingBuffer() {
         handler.removeCallbacks(bufferWatcher);
         handler.post(bufferWatcher);
@@ -193,18 +266,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         } else {
             this.audioSessionId = audioSessionId;
         }
-        clearAudioEffects();
-        if (this.audioSessionId != null) {
-            for (Object rawAudioEffect : rawAudioEffects) {
-                Map<?, ?> json = (Map<?, ?>)rawAudioEffect;
-                AudioEffect audioEffect = decodeAudioEffect(rawAudioEffect, this.audioSessionId);
-                if ((Boolean)json.get("enabled")) {
-                    audioEffect.setEnabled(true);
-                }
-                audioEffects.add(audioEffect);
-                audioEffectsMap.put((String)json.get("type"), audioEffect);
-            }
-        }
+        initAudioEffects();
         enqueuePlaybackEvent();
     }
 
@@ -510,7 +572,21 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                 equalizerBandSetGain(call.argument("bandIndex"), call.argument("gain"));
                 result.success(new HashMap<String, Object>());
                 break;
-            default:
+            case "setAudioEffects":
+                rawAudioEffects = call.argument("audioEffects");
+                initAudioEffects();
+                result.success(new HashMap<String, Object>());
+                break;
+                case "fadeVolume": // New case
+                    Number intervalMs = call.argument("interval");
+                    List<Double> volumes = call.argument("volumes");
+                    fadeVolume(intervalMs, volumes, result);
+                    return; // Return early as result is handled asynchronously or directly
+                case "cancelVolumeFade":
+                    cancelVolumeFade();
+                    result.success(new HashMap<String, Object>());
+                    break;
+                default:
                 result.notImplemented();
                 break;
             }
@@ -695,15 +771,32 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         case "AndroidLoudnessEnhancer":
             if (Build.VERSION.SDK_INT < 19)
                 throw new RuntimeException("AndroidLoudnessEnhancer requires minSdkVersion >= 19");
+            LoudnessEnhancer loudnessEnhancer = new LoudnessEnhancer(audioSessionId);    
             int targetGain = (int)Math.round((((Double)map.get("targetGain")) * 1000.0));
-            LoudnessEnhancer loudnessEnhancer = new LoudnessEnhancer(audioSessionId);
-            loudnessEnhancer.setTargetGain(targetGain);
+            if (targetGain > 0){ 
+               loudnessEnhancer.setTargetGain(targetGain); 
+            }
             return loudnessEnhancer;
         case "AndroidEqualizer":
             Equalizer equalizer = new Equalizer(0, audioSessionId);
             return equalizer;
         default:
             throw new IllegalArgumentException("Unknown AudioEffect type: " + map.get("type"));
+        }
+    }
+
+    private void initAudioEffects() {
+        clearAudioEffects();
+        if (this.audioSessionId != null) {
+            for (Object rawAudioEffect : rawAudioEffects) {
+                Map<?, ?> json = (Map<?, ?>)rawAudioEffect;
+                AudioEffect audioEffect = decodeAudioEffect(rawAudioEffect, this.audioSessionId);
+                if ((Boolean)json.get("enabled")) {
+                    audioEffect.setEnabled(true);
+                }
+                audioEffects.add(audioEffect);
+                audioEffectsMap.put((String)json.get("type"), audioEffect);
+            }
         }
     }
 
@@ -981,6 +1074,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     public void pause() {
         if (!player.getPlayWhenReady()) return;
+        cancelVolumeFade();
         player.setPlayWhenReady(false);
         updatePosition();
         if (playResult != null) {
@@ -990,6 +1084,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     public void setVolume(final float volume) {
+        cancelVolumeFade();
         player.setVolume(volume);
     }
 
@@ -1040,6 +1135,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     public void dispose() {
+        cancelVolumeFade();
         if (processingState == ProcessingState.loading) {
             abortExistingConnection();
         }

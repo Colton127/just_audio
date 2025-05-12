@@ -761,17 +761,6 @@ class AudioPlayer {
     await future;
   }
 
-  Future<void> fadeVolume(final int interval, final List<double> volumes) async {
-    if (_disposed || volumes.isEmpty) return;
-    _volumeSubject.add(volumes[volumes.length - 1]); // Set the last volume in the list
-    await (_platformValue ?? await _platform).fadeVolume(FadeVolumeRequest(interval: interval, volumes: volumes));
-  }
-
-  Future<void> cancelVolumeFade() async {
-    if (_disposed) return;
-    await (_platformValue ?? await _platform).cancelVolumeFade(CancelVolumeFadeRequest());
-  }
-
   /// Sets the volume of this player, where 1.0 is normal volume.
   Future<void> setVolume(final double volume) async {
     if (_disposed) return;
@@ -2156,16 +2145,6 @@ class _IdleAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(SetWebCrossOriginRequest request) async {
     return SetWebCrossOriginResponse();
-  }
-
-  @override
-  Future<FadeVolumeResponse> fadeVolume(FadeVolumeRequest request) async {
-    return FadeVolumeResponse();
-  }
-
-  @override
-  Future<CancelVolumeFadeResponse> cancelVolumeFade(CancelVolumeFadeRequest request) async {
-    return CancelVolumeFadeResponse();
   }
 
   @override

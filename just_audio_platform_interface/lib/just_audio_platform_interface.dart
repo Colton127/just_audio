@@ -210,14 +210,6 @@ abstract class AudioPlayerPlatform {
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(SetWebCrossOriginRequest request) {
     throw UnimplementedError("setWebCrossOrigin() has not been implemented.");
   }
-
-  Future<FadeVolumeResponse> fadeVolume(FadeVolumeRequest request) {
-    throw UnimplementedError("fadeVolume() has not been implemented.");
-  }
-
-  Future<CancelVolumeFadeResponse> cancelVolumeFade(CancelVolumeFadeRequest request) async {
-    throw UnimplementedError("cancelVolumeFade() has not been implemented.");
-  }
 }
 
 /// A data update communicated from the platform implementation to the Flutter
@@ -1427,36 +1419,4 @@ class SetAudioPipelineRequest {
 
 class SetAudioPipelineResponse {
   static SetAudioPipelineResponse fromMap(Map<dynamic, dynamic> map) => SetAudioPipelineResponse();
-}
-
-class FadeVolumeRequest {
-  /// The interval in milliseconds over which to fade the volume.
-  final int interval;
-  final List<double> volumes;
-
-  FadeVolumeRequest({
-    required this.interval,
-    required this.volumes,
-  });
-
-  Map<dynamic, dynamic> toMap() => <dynamic, dynamic>{
-        'interval': interval,
-        'volumes': volumes,
-      };
-}
-
-/// Information returned by the platform implementation after inserting audio
-/// sources into a concatenating audio source.
-class FadeVolumeResponse {
-  static FadeVolumeResponse fromMap(Map<dynamic, dynamic> map) => FadeVolumeResponse();
-}
-
-class CancelVolumeFadeRequest {
-  Map<dynamic, dynamic> toMap() => <dynamic, dynamic>{};
-}
-
-/// Information returned by the platform implementation after playing an audio
-/// source.
-class CancelVolumeFadeResponse {
-  static CancelVolumeFadeResponse fromMap(Map<dynamic, dynamic> map) => CancelVolumeFadeResponse();
 }

@@ -49,12 +49,6 @@
     BOOL _justAdvanced;
     BOOL _enqueuedAll;
     NSDictionary<NSString *, NSObject *> *_icyMetadata;
-
-    NSArray<NSNumber *> *_activeFadeVolumes;
-    NSTimeInterval _activeFadeIntervalSeconds;
-    int _activeFadeCurrentIndex;
-    FlutterResult _activeFadeResult;
-    NSTimer *_fadeVolumeTimer;
 }
 
 - (instancetype)initWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar playerId:(NSString*)idParam loadConfiguration:(NSDictionary *)loadConfiguration {
@@ -93,11 +87,6 @@
     _automaticallyWaitsToMinimizeStalling = YES;
     _allowsExternalPlayback = NO;
     _loadControl = nil;
-     _activeFadeVolumes = nil;
-    _activeFadeIntervalSeconds = 0.0;
-    _activeFadeCurrentIndex = 0;
-    _activeFadeResult = nil;
-    _fadeVolumeTimer = nil;
     if (loadConfiguration != (id)[NSNull null]) {
         NSDictionary *map = loadConfiguration[@"darwinLoadControl"];
         if (map != (id)[NSNull null]) {
@@ -182,13 +171,6 @@
             [self concatenatingMove:(NSString *)request[@"id"] currentIndex:[request[@"currentIndex"] intValue] newIndex:[request[@"newIndex"] intValue] shuffleOrder:(NSArray<NSNumber *> *)request[@"shuffleOrder"]];
             result(@{});
         } else if ([@"setAndroidAudioAttributes" isEqualToString:call.method]) {
-            result(@{});
-        } else if ([@"fadeVolume" isEqualToString:call.method]) { 
-        NSNumber *intervalMs = request[@"interval"];
-        NSArray<NSNumber *> *volumes = request[@"volumes"];
-        [self fadeVolume:intervalMs volumes:volumes result:result];   
-        } else if ([@"cancelVolumeFade" isEqualToString:call.method]) {
-            [self cancelVolumeFade];
             result(@{});
         } else {
             result(FlutterMethodNotImplemented);
@@ -343,77 +325,6 @@
 - (void)leaveBuffering:(NSString *)reason {
     //NSLog(@"LEAVE BUFFERING: %@", reason);
     _processingState = ready;
-}
-
-- (void)fadeVolume:(NSNumber *)intervalMsNumber volumes:(NSArray<NSNumber *> *)volumes result:(FlutterResult)result {
-    [self cancelVolumeFade];
-    if (!_player) {
-        result([FlutterError errorWithCode:@"player_not_initialized" message:@"Player is not initialized." details:nil]);
-        return;
-    }
-    if (!volumes || volumes.count == 0) {
-        result(@{}); // No volumes to fade
-        return;
-    }
-    NSTimeInterval intervalSeconds = [intervalMsNumber doubleValue] / 1000.0;
-    if (intervalSeconds <= 0) {
-        if (volumes.count > 0) {
-            [_player setVolume:[[volumes lastObject] floatValue]];
-        }
-        result(@{});
-        return;
-    }
-
-    _activeFadeResult = result; // Store the new result
-    _activeFadeVolumes = [[NSArray alloc] initWithArray:volumes copyItems:YES];
-    _activeFadeIntervalSeconds = intervalSeconds;
-    _activeFadeCurrentIndex = 0;
-    [self performNextFadeStep];
-}
-
-- (void)performNextFadeStep {
-    if (!_player || !_activeFadeVolumes || _activeFadeCurrentIndex < 0 || _activeFadeCurrentIndex >= _activeFadeVolumes.count) {
-        [self cancelVolumeFade];
-        return;
-    }
-
-    NSNumber *targetVolumeNumber = _activeFadeVolumes[_activeFadeCurrentIndex];
-    [_player setVolume:[targetVolumeNumber floatValue]];
-    // NSLog(@"Fading volume to: %f at index %d", [targetVolumeNumber floatValue], _activeFadeCurrentIndex);
-
-    _activeFadeCurrentIndex++;
-
-    if (_activeFadeCurrentIndex < _activeFadeVolumes.count) {
-        // Schedule next step
-        if (_fadeVolumeTimer) { // Invalidate previous timer just in case, though it should be non-repeating
-            [_fadeVolumeTimer invalidate];
-        }
-        _fadeVolumeTimer = [NSTimer scheduledTimerWithTimeInterval:_activeFadeIntervalSeconds
-                                                            target:self
-                                                          selector:@selector(performNextFadeStep)
-                                                          userInfo:nil
-                                                           repeats:NO];
-    } else {
-        // Fade completed
-        [self cancelVolumeFade];
-    }
-}
-
-
-- (void)cancelVolumeFade {
-    if (_activeFadeVolumes != nil) {
-    _activeFadeVolumes = nil;
-    _activeFadeCurrentIndex = 0;
-    _activeFadeIntervalSeconds = 0.0;
-    if (_fadeVolumeTimer) {
-        [_fadeVolumeTimer invalidate];
-        _fadeVolumeTimer = nil;
-    }
-    if (_activeFadeResult) {
-        _activeFadeResult(@{}); // Complete previous result
-        _activeFadeResult = nil;
-    }
-    }
 }
 
 - (void)broadcastPlaybackEvent {
@@ -1135,7 +1046,6 @@
     if (!_playing) return;
     _playing = NO;
     [_player pause];
-    [self cancelVolumeFade];
     [self updatePosition];
     [self broadcastPlaybackEvent];
     if (_playResult) {
@@ -1159,7 +1069,6 @@
 - (void)setVolume:(float)volume {
     _volume = volume;
     if (_player) {
-        [self cancelVolumeFade]; // Cancel any volume fade in progress
         [_player setVolume:volume];
     }
 }
@@ -1418,7 +1327,6 @@
 }
 
 - (void)dispose:(BOOL)calledFromDealloc {
-    [self cancelVolumeFade];
     if (!_player) return;
     if (_processingState != none) {
         [_player pause];

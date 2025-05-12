@@ -105,11 +105,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     private MediaSource mediaSource;
     private Integer currentIndex;
 
-    private List<Double> activeFadeVolumes;
-    private long activeFadeIntervalMs;
-    private int activeFadeCurrentIndex;
-
-    private Result activeFadeResult;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable bufferWatcher = new Runnable() {
@@ -140,30 +135,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             }
         }
     };
-    private final Runnable fadeVolumeRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (player == null || activeFadeVolumes == null || activeFadeCurrentIndex >= activeFadeVolumes.size() || activeFadeCurrentIndex < 0) {
-                cancelVolumeFade(); // Stop if player is gone, fade is cancelled, or index is out of bounds
-                return;
-            }
-
-
-            double targetVolume = activeFadeVolumes.get(activeFadeCurrentIndex);
-            player.setVolume((float)targetVolume);
-            activeFadeCurrentIndex++;
-
-            if (activeFadeCurrentIndex < activeFadeVolumes.size()) {
-                handler.postDelayed(this, activeFadeIntervalMs);
-            } else {
-                cancelVolumeFade(); // Fade completed
-            }
-        }
-    };
-
-
-
-
+    
     public AudioPlayer(
         final Context applicationContext,
         final BinaryMessenger messenger,
@@ -208,48 +180,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                     .setTargetLiveOffsetIncrementOnRebufferMs(((getLong(livePlaybackSpeedControlMap.get("targetLiveOffsetIncrementOnRebuffer")))/1000))
                     .setMinPossibleLiveOffsetSmoothingFactor((float)((double)((Double)livePlaybackSpeedControlMap.get("minPossibleLiveOffsetSmoothingFactor"))));
                 livePlaybackSpeedControl = builder.build();
-            }
-        }
-    }
-
-    private void fadeVolume(Number intervalMsNumber, List<Double> volumes, Result result) {
-        cancelVolumeFade(); // Cancel any ongoing fade
-        if (player == null) {
-            result.error("player_not_initialized", "Player is not initialized.", null);
-            return;
-        }
-
-        if (volumes == null || volumes.isEmpty()) {
-            result.success(new HashMap<String, Object>()); // No volumes to fade
-            return;
-        }
-        long intervalMs = intervalMsNumber.longValue();
-        if (intervalMs <= 0) {
-            // If interval is invalid, just set to the last volume instantly
-            player.setVolume(volumes.get(volumes.size() - 1).floatValue());
-            result.success(new HashMap<String, Object>());
-            return;
-        }
-
-        this.activeFadeResult = result;
-        this.activeFadeVolumes = new ArrayList<>(volumes); // Make a copy
-        this.activeFadeIntervalMs = intervalMs;
-        this.activeFadeCurrentIndex = 0;
-
-        // Start the fade by posting the runnable
-        handler.post(fadeVolumeRunnable);
-    }
-
-
-    private void cancelVolumeFade() {
-        if (activeFadeVolumes != null) {
-            activeFadeVolumes = null;
-            handler.removeCallbacks(fadeVolumeRunnable);
-            activeFadeCurrentIndex = 0;
-            activeFadeIntervalMs = 0;
-            if (this.activeFadeResult != null) {
-                this.activeFadeResult.success(new HashMap<String, Object>());
-                this.activeFadeResult = null;
             }
         }
     }
@@ -577,15 +507,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
                 initAudioEffects();
                 result.success(new HashMap<String, Object>());
                 break;
-                case "fadeVolume": // New case
-                    Number intervalMs = call.argument("interval");
-                    List<Double> volumes = call.argument("volumes");
-                    fadeVolume(intervalMs, volumes, result);
-                    return; // Return early as result is handled asynchronously or directly
-                case "cancelVolumeFade":
-                    cancelVolumeFade();
-                    result.success(new HashMap<String, Object>());
-                    break;
                 default:
                 result.notImplemented();
                 break;
@@ -1074,7 +995,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     public void pause() {
         if (!player.getPlayWhenReady()) return;
-        cancelVolumeFade();
         player.setPlayWhenReady(false);
         updatePosition();
         if (playResult != null) {
@@ -1084,7 +1004,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     public void setVolume(final float volume) {
-        cancelVolumeFade();
         player.setVolume(volume);
     }
 
@@ -1135,7 +1054,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     public void dispose() {
-        cancelVolumeFade();
         if (processingState == ProcessingState.loading) {
             abortExistingConnection();
         }

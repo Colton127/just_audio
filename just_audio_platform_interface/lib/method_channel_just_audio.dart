@@ -173,16 +173,6 @@ class MethodChannelAudioPlayer extends AudioPlayerPlatform {
   Future<SetAudioPipelineResponse> setAudioPipeline(SetAudioPipelineRequest request) async {
     return SetAudioPipelineResponse.fromMap((await _channel.invokeMethod<Map<dynamic, dynamic>>('setAudioEffects', request.toMap()))!);
   }
-
-  @override
-  Future<FadeVolumeResponse> fadeVolume(FadeVolumeRequest request) async {
-    return FadeVolumeResponse.fromMap((await _channel.invokeMethod<Map<dynamic, dynamic>>('fadeVolume', request.toMap()))!);
-  }
-
-  @override
-  Future<CancelVolumeFadeResponse> cancelVolumeFade(CancelVolumeFadeRequest request) async {
-    return CancelVolumeFadeResponse.fromMap((await _channel.invokeMethod<Map<dynamic, dynamic>>('cancelVolumeFade', request.toMap()))!);
-  }
 }
 
 /// Information communicated to the platform implementation when setting the

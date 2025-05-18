@@ -239,6 +239,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     }
 
     private boolean updatePositionIfChanged() {
+        if (player == null) return false;
         if (getCurrentPosition() == updatePosition) return false;
         updatePosition = getCurrentPosition();
         updateTime = System.currentTimeMillis();

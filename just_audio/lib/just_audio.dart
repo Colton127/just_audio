@@ -247,29 +247,6 @@ class AudioPlayer {
         });
       });
     }
-    _removeOldAssetCacheDir();
-  }
-
-  /// Old versions of just_audio used an asset caching system that created a
-  /// separate cache file per asset per player instance, and was highly
-  /// dependent on the app calling [dispose] to clean up afterwards. If the app
-  /// is upgrading from an old version of just_audio, this will delete the old
-  /// cache directory.
-  Future<void> _removeOldAssetCacheDir() async {
-    if (kIsWeb) return;
-    try {
-      final oldAssetCacheDir = Directory(p.join((await getTemporaryDirectory()).path, 'just_audio_asset_cache'));
-      if (oldAssetCacheDir.existsSync()) {
-        try {
-          oldAssetCacheDir.deleteSync(recursive: true);
-        } catch (e) {
-          // ignore: avoid_print
-          print("Failed to delete old asset cache dir: $e");
-        }
-      }
-    } catch (e) {
-      // There is no temporary directory for this platform.
-    }
   }
 
   /// This is `true` when the audio player needs to engage the native platform
@@ -879,36 +856,38 @@ class AudioPlayer {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _playbackEventSubscription?.cancel();
-    _playerDataSubscription?.cancel();
-
-    if (_nativePlatform != null) {
-      await _disposePlatform(await _nativePlatform!);
-      _nativePlatform = null;
+    try {
+      _playbackEventSubscription?.cancel();
+      _playerDataSubscription?.cancel();
+      if (_nativePlatform != null) {
+        await _disposePlatform(await _nativePlatform!);
+        _nativePlatform = null;
+      }
+      if (_idlePlatform != null) {
+        await _disposePlatform(_idlePlatform!);
+        _idlePlatform = null;
+      }
+    } finally {
+      _platformValue = null;
+      _audioSource?.dispose();
+      _audioSource = null;
+      if (_androidAudioAttributesSubscription != null) {
+        await _androidAudioAttributesSubscription!.cancel();
+      }
+      if (_becomingNoisyEventSubscription != null) {
+        await _becomingNoisyEventSubscription!.cancel();
+      }
+      if (_interruptionEventSubscription != null) {
+        await _interruptionEventSubscription!.cancel();
+      }
+      await _durationSubject.close();
+      await _loopModeSubject.close();
+      await _playingSubject.close();
+      await _volumeSubject.close();
+      await _speedSubject.close();
+      await _pitchSubject.close();
+      await _playbackEventSubject.close();
     }
-    if (_idlePlatform != null) {
-      await _disposePlatform(_idlePlatform!);
-      _idlePlatform = null;
-    }
-    _audioSource?.dispose();
-    _audioSource = null;
-    _platformValue = null;
-    if (_androidAudioAttributesSubscription != null) {
-      await _androidAudioAttributesSubscription!.cancel();
-    }
-    if (_becomingNoisyEventSubscription != null) {
-      await _becomingNoisyEventSubscription!.cancel();
-    }
-    if (_interruptionEventSubscription != null) {
-      await _interruptionEventSubscription!.cancel();
-    }
-    await _durationSubject.close();
-    await _loopModeSubject.close();
-    await _playingSubject.close();
-    await _volumeSubject.close();
-    await _speedSubject.close();
-    await _pitchSubject.close();
-    await _playbackEventSubject.close();
   }
 
   /// Switch to using the native platform when [active] is `true` and using the
@@ -1775,8 +1754,6 @@ abstract class AudioSource {
     _player = player;
   }
 
-  void _shuffle({int? initialIndex});
-
   @mustCallSuper
   void dispose() {
     // Without this we might make _player "late".
@@ -1803,9 +1780,6 @@ abstract class IndexedAudioSource extends AudioSource {
   Duration? duration;
 
   IndexedAudioSource({this.tag, this.duration});
-
-  @override
-  void _shuffle({int? initialIndex}) {}
 
   @override
   List<IndexedAudioSource> get sequence => [this];

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -499,33 +498,6 @@ class AudioPlayer {
     dynamic tag,
   }) =>
       setAudioSource(AudioSource.file(filePath, tag: tag), initialPosition: initialPosition, preload: preload);
-
-  /// Convenience method to set the audio source to an asset, preloaded by
-  /// default, with an initial position of zero by default.
-  ///
-  /// For assets within the same package, this is equivalent to:
-  ///
-  /// ```
-  /// setAudioSource(AudioSource.uri(Uri.parse('asset:///$assetPath'), tag: tag),
-  ///     initialPosition: Duration.zero, preload: true);
-  /// ```
-  ///
-  /// If the asset is to be loaded from a different package, the [package]
-  /// parameter must be given to specify the package name.
-  ///
-  /// See [setAudioSource] for a detailed explanation of the options.
-  Future<Duration?> setAsset(
-    String assetPath, {
-    String? package,
-    bool preload = true,
-    Duration? initialPosition,
-    dynamic tag,
-  }) =>
-      setAudioSource(
-        AudioSource.asset(assetPath, package: package, tag: tag),
-        initialPosition: initialPosition,
-        preload: preload,
-      );
 
   /// Sets the source from which this audio player should fetch audio.
   ///
@@ -1732,21 +1704,6 @@ abstract class AudioSource {
     return AudioSource.uri(Uri.file(filePath), tag: tag);
   }
 
-  /// Convenience method to create an audio source for an asset.
-  ///
-  /// For assets within the same package, this is equivalent to:
-  ///
-  /// ```
-  /// AudioSource.uri(Uri.parse('asset:///$assetPath'), tag: tag);
-  /// ```
-  ///
-  /// If the asset is to be loaded from a different package, the [package]
-  /// parameter must be given to specify the package name.
-  static UriAudioSource asset(String assetPath, {String? package, dynamic tag}) {
-    final keyName = package == null ? assetPath : 'packages/$package/$assetPath';
-    return AudioSource.uri(Uri.parse('asset:///$keyName'), tag: tag);
-  }
-
   AudioSource() : _id = _uuid.v4();
 
   @mustCallSuper
@@ -1792,64 +1749,8 @@ abstract class IndexedAudioSource extends AudioSource {
 abstract class UriAudioSource extends IndexedAudioSource {
   final Uri uri;
   final Map<String, String>? headers;
-  Uri? _overrideUri;
 
   UriAudioSource(this.uri, {this.headers, dynamic tag, Duration? duration}) : super(tag: tag, duration: duration);
-
-  /// If [uri] points to an asset, this gives us [_overrideUri] which is the URI
-  /// of the copied asset on the filesystem, otherwise it gives us the original
-  /// [uri].
-  Uri get _effectiveUri => _overrideUri ?? uri;
-
-  @override
-  Future<void> setup(AudioPlayer player) async {
-    await super.setup(player);
-    if (uri.scheme == 'asset') {
-      _overrideUri = await _loadAsset(uri.pathSegments.join('/'));
-    }
-  }
-
-  Future<Uri> _loadAsset(String assetPath) async {
-    if (kIsWeb) {
-      // Mapping from extensions to content types for the web player. If an
-      // extension is missing, please submit a pull request.
-      const mimeTypes = {
-        '.aac': 'audio/aac',
-        '.mp3': 'audio/mpeg',
-        '.ogg': 'audio/ogg',
-        '.opus': 'audio/opus',
-        '.wav': 'audio/wav',
-        '.weba': 'audio/webm',
-        '.mp4': 'audio/mp4',
-        '.m4a': 'audio/mp4',
-        '.aif': 'audio/x-aiff',
-        '.aifc': 'audio/x-aiff',
-        '.aiff': 'audio/x-aiff',
-        '.m3u': 'audio/x-mpegurl',
-      };
-      // Default to 'audio/mpeg'
-      final mimeType = mimeTypes[p.extension(assetPath).toLowerCase()] ?? 'audio/mpeg';
-      return _encodeDataUrl(base64.encode((await rootBundle.load(assetPath)).buffer.asUint8List()), mimeType);
-    } else {
-      // For non-web platforms, extract the asset into a cache file and pass
-      // that to the player.
-      final file = await _getCacheFile(assetPath);
-      // Not technically inter-isolate-safe, although low risk. Could consider
-      // locking the file or creating a separate lock file.
-      if (!file.existsSync()) {
-        file.createSync(recursive: true);
-        await file.writeAsBytes((await rootBundle.load(assetPath)).buffer.asUint8List());
-      }
-      return Uri.file(file.path);
-    }
-  }
-
-  /// Get file for caching asset media with proper extension
-  Future<File> _getCacheFile(final String assetPath) async => File(p.joinAll([
-        (await _getCacheDir()).path,
-        'assets',
-        ...Uri.parse(assetPath).pathSegments,
-      ]));
 }
 
 /// An [AudioSource] representing a regular media file such as an MP3 or M4A
@@ -1879,7 +1780,7 @@ class ProgressiveAudioSource extends UriAudioSource {
   @override
   AudioSourceMessage _toMessage() => ProgressiveAudioSourceMessage(
         id: _id,
-        uri: _effectiveUri.toString(),
+        uri: uri.toString(),
         headers: null,
         tag: tag,
         options: options?._toMessage(),
@@ -1906,7 +1807,7 @@ class DashAudioSource extends UriAudioSource {
   @override
   AudioSourceMessage _toMessage() => DashAudioSourceMessage(
         id: _id,
-        uri: _effectiveUri.toString(),
+        uri: uri.toString(),
         headers: null,
         tag: tag,
       );
@@ -1931,13 +1832,11 @@ class HlsAudioSource extends UriAudioSource {
   @override
   AudioSourceMessage _toMessage() => HlsAudioSourceMessage(
         id: _id,
-        uri: _effectiveUri.toString(),
+        uri: uri.toString(),
         headers: null,
         tag: tag,
       );
 }
-
-Uri _encodeDataUrl(String base64Data, String mimeType) => Uri.parse('data:$mimeType;base64,$base64Data');
 
 Future<Directory> _getCacheDir() async => Directory(p.join((await getTemporaryDirectory()).path, 'just_audio_cache'));
 

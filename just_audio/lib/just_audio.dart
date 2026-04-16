@@ -558,7 +558,6 @@ class AudioPlayer {
       _initialSeekValues = null;
       final loadNumber = ++_loadCount;
       final platform = _platformValue ?? await _platform;
-      //Potential race condition here if audioSource changes while awaiting platform.
       return await _load(platform, _audioSource!, loadNumber, initialSeekValues: initialSeekValues);
     } else {
       // This will implicitly load the current audio source.
@@ -569,6 +568,9 @@ class AudioPlayer {
   Future<Duration?> _load(AudioPlayerPlatform platform, AudioSource source, int loadNumber, {_InitialSeekValues? initialSeekValues}) async {
     final activationNumber = _activationCount;
     void checkInterruption() {
+      if (_disposed) {
+        throw PlatformException(code: 'abort', message: 'Loading interrupted (Player disposed)');
+      }
       if (_activationCount != activationNumber) {
         // the platform has changed since we started loading, so abort.
         throw PlatformException(code: 'abort', message: 'Loading interrupted (Platform changed)');
